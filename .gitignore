@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Production build
+/build
+/public/build
+.cache/
+
+# Environment variables
+.env
+.env.local
+.env.staging
+.env.production
+
+# React Router generated files
+/.react-router/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# CDK
+cdk.out/
+*.d.ts
+!global.d.ts
+
+# Testing
+/coverage
+/.nyc_output
+
+# Temporary files
+*.tmp
+*.temp
+
+# Neo4j local database files
+data/
+logs/
+plugins/
+import/
+
+# MCP server logs
+mcp-server.log
+
+# Development files
+changePlan.md

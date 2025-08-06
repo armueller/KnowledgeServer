@@ -1,0 +1,57 @@
+{
+  "app": "npx tsx infrastructure/bin/app.ts",
+  "watch": {
+    "include": ["infrastructure/**/*.ts"],
+    "exclude": ["README.md", "cdk*.json", "**/*.d.ts", "**/*.js", "tsconfig.json", "package*.json", "yarn.lock", "node_modules"]
+  },
+  "context": {
+    "@aws-cdk/aws-apigateway:usagePlanKeyOrderInsensitiveId": true,
+    "@aws-cdk/core:stackRelativeExports": true,
+    "@aws-cdk/aws-rds:lowercaseDbIdentifier": true,
+    "@aws-cdk/aws-lambda:recognizeVersionProps": true,
+    "@aws-cdk/aws-ecs:arnFormatIncludesClusterName": true,
+    "@aws-cdk/aws-ecs-patterns:enableDefaultLogDriver": true,
+    "@aws-cdk/core:target-partitions": ["aws"],
+    "app": {
+      "name": "knowledge-server",
+      "environment": {
+        "staging": {
+          "vpc": {
+            "maxAzs": 2,
+            "natGateways": 1
+          },
+          "ecs": {
+            "containerPort": 3000,
+            "cpu": 1024,
+            "memoryLimitMiB": 2048,
+            "desiredCount": 1,
+            "minCapacity": 1,
+            "maxCapacity": 1
+          },
+          "dns": {
+            "domainName": "tabus10.com",
+            "hostedZoneId": "Z024767431QEZCWVKVY0A"
+          }
+        },
+        "prod": {
+          "vpc": {
+            "maxAzs": 2,
+            "natGateways": 1
+          },
+          "ecs": {
+            "containerPort": 3000,
+            "cpu": 1024,
+            "memoryLimitMiB": 2048,
+            "desiredCount": 1,
+            "minCapacity": 1,
+            "maxCapacity": 1
+          },
+          "dns": {
+            "domainName": "tabus10.com",
+            "hostedZoneId": "Z024767431QEZCWVKVY0A"
+          }
+        }
+      }
+    }
+  }
+}
