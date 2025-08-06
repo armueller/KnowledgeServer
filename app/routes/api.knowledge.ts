@@ -1,7 +1,9 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { getNeo4jUri, getNeo4jUsername, getNeo4jPassword } from "~/env";
+import { apiLoaderWithUserAuth } from "~/middleware/loaderWithUserAuth";
+import { apiActionWithUserAuth } from "~/middleware/actionWithUserAuth";
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export const loader = apiLoaderWithUserAuth(async ({ request, context }: LoaderFunctionArgs & { context: { userId: string } }) => {
   const url = new URL(request.url);
   const searchParams = url.searchParams;
   
@@ -24,9 +26,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       "Content-Type": "application/json",
     },
   });
-}
+});
 
-export async function action({ request }: ActionFunctionArgs) {
+export const action = apiActionWithUserAuth(async ({ request, context }: ActionFunctionArgs & { context: { userId: string } }) => {
   if (request.method === "POST") {
     // TODO: Implement knowledge creation
     const body = await request.json();
@@ -77,4 +79,4 @@ export async function action({ request }: ActionFunctionArgs) {
     { error: "Method not allowed" },
     { status: 405 }
   );
-}
+});

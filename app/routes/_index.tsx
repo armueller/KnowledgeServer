@@ -1,4 +1,7 @@
 import type { MetaFunction } from "react-router";
+import { redirect } from "react-router";
+import { getSession } from "~/sessions.server";
+import type { Route } from "./+types/_index";
 
 export const meta: MetaFunction = () => {
   return [
@@ -6,6 +9,16 @@ export const meta: MetaFunction = () => {
     { name: "description", content: "Neo4j-based contextual knowledge management across projects" },
   ];
 };
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const session = await getSession(request.headers.get('Cookie'));
+
+  if (session.has('accessToken')) {
+    return redirect('/dashboard');
+  } else {
+    return redirect('/login');
+  }
+}
 
 export default function Index() {
   return (

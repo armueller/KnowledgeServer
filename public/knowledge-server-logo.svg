@@ -1,0 +1,115 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Define a subtle gradient for depth -->
+    <linearGradient id="centerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#818cf8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
+    </linearGradient>
+    <!-- Glow effect for nodes -->
+    <filter id="nodeGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Central Knowledge Node -->
+  <circle cx="256" cy="256" r="45" fill="#4f46e5" opacity="0.2"/>
+  <circle cx="256" cy="256" r="40" fill="url(#centerGradient)" filter="url(#nodeGlow)"/>
+  
+  <!-- Book/Knowledge Symbol in Center -->
+  <g transform="translate(256, 256)">
+    <!-- Book pages -->
+    <path d="M-12 -18 L-12 18 L0 20 L12 18 L12 -18 L0 -20 Z" fill="white" opacity="0.95"/>
+    <!-- Book spine -->
+    <rect x="-2" y="-20" width="4" height="40" fill="white"/>
+    <!-- Page lines -->
+    <g stroke="#6366f1" stroke-width="1" opacity="0.4">
+      <line x1="-8" y1="-10" x2="-4" y2="-10"/>
+      <line x1="-8" y1="-4" x2="-4" y2="-4"/>
+      <line x1="-8" y1="2" x2="-4" y2="2"/>
+      <line x1="-8" y1="8" x2="-4" y2="8"/>
+      <line x1="4" y1="-10" x2="8" y2="-10"/>
+      <line x1="4" y1="-4" x2="8" y2="-4"/>
+      <line x1="4" y1="2" x2="8" y2="2"/>
+      <line x1="4" y1="8" x2="8" y2="8"/>
+    </g>
+  </g>
+  
+  <!-- Primary Graph Nodes -->
+  <!-- Top Node -->
+  <circle cx="256" cy="120" r="28" fill="#6366f1" opacity="0.8" filter="url(#nodeGlow)"/>
+  <circle cx="256" cy="120" r="20" fill="#818cf8"/>
+  
+  <!-- Top-Right Node -->
+  <circle cx="368" cy="176" r="25" fill="#6366f1" opacity="0.75" filter="url(#nodeGlow)"/>
+  <circle cx="368" cy="176" r="18" fill="#818cf8"/>
+  
+  <!-- Right Node -->
+  <circle cx="392" cy="256" r="30" fill="#6366f1" opacity="0.85" filter="url(#nodeGlow)"/>
+  <circle cx="392" cy="256" r="22" fill="#818cf8"/>
+  
+  <!-- Bottom-Right Node -->
+  <circle cx="368" cy="336" r="26" fill="#6366f1" opacity="0.75" filter="url(#nodeGlow)"/>
+  <circle cx="368" cy="336" r="19" fill="#818cf8"/>
+  
+  <!-- Bottom Node -->
+  <circle cx="256" cy="392" r="28" fill="#6366f1" opacity="0.8" filter="url(#nodeGlow)"/>
+  <circle cx="256" cy="392" r="20" fill="#818cf8"/>
+  
+  <!-- Bottom-Left Node -->
+  <circle cx="144" cy="336" r="25" fill="#6366f1" opacity="0.75" filter="url(#nodeGlow)"/>
+  <circle cx="144" cy="336" r="18" fill="#818cf8"/>
+  
+  <!-- Left Node -->
+  <circle cx="120" cy="256" r="30" fill="#6366f1" opacity="0.85" filter="url(#nodeGlow)"/>
+  <circle cx="120" cy="256" r="22" fill="#818cf8"/>
+  
+  <!-- Top-Left Node -->
+  <circle cx="144" cy="176" r="26" fill="#6366f1" opacity="0.75" filter="url(#nodeGlow)"/>
+  <circle cx="144" cy="176" r="19" fill="#818cf8"/>
+  
+  <!-- Connections from center to outer nodes -->
+  <g stroke="#6366f1" stroke-width="3" opacity="0.5">
+    <line x1="256" y1="216" x2="256" y2="148"/>
+    <line x1="288" y1="224" x2="343" y2="193"/>
+    <line x1="296" y1="256" x2="362" y2="256"/>
+    <line x1="288" y1="288" x2="343" y2="319"/>
+    <line x1="256" y1="296" x2="256" y2="364"/>
+    <line x1="224" y1="288" x2="169" y2="319"/>
+    <line x1="216" y1="256" x2="150" y2="256"/>
+    <line x1="224" y1="224" x2="169" y2="193"/>
+  </g>
+  
+  <!-- Outer ring connections -->
+  <g stroke="#818cf8" stroke-width="2" opacity="0.3">
+    <line x1="256" y1="148" x2="343" y2="193"/>
+    <line x1="343" y1="193" x2="362" y2="256"/>
+    <line x1="362" y1="256" x2="343" y2="319"/>
+    <line x1="343" y1="319" x2="256" y2="364"/>
+    <line x1="256" y1="364" x2="169" y2="319"/>
+    <line x1="169" y1="319" x2="150" y2="256"/>
+    <line x1="150" y1="256" x2="169" y2="193"/>
+    <line x1="169" y1="193" x2="256" y2="148"/>
+  </g>
+  
+  <!-- AI/Data flow indicators -->
+  <g fill="#c7d2fe" opacity="0.7">
+    <circle cx="200" cy="200" r="3"/>
+    <circle cx="312" cy="200" r="3"/>
+    <circle cx="200" cy="312" r="3"/>
+    <circle cx="312" cy="312" r="3"/>
+  </g>
+  
+  <!-- Small connector dots on edges -->
+  <g fill="#a5b4fc" opacity="0.5">
+    <circle cx="256" cy="180" r="2"/>
+    <circle cx="330" cy="215" r="2"/>
+    <circle cx="330" cy="297" r="2"/>
+    <circle cx="256" cy="332" r="2"/>
+    <circle cx="182" cy="297" r="2"/>
+    <circle cx="182" cy="215" r="2"/>
+  </g>
+</svg>

@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
@@ -54,6 +55,9 @@ export class AppStack extends cdk.Stack {
     const APP_NAME = 'knowledge-server';
     // Different subdomain for staging vs prod
     const APP_SUBDOMAIN = props.envName === 'prod' ? 'knowledge-server' : 'knowledge-server-dev';
+
+    // ========== CREATE COGNITO RESOURCES ==========
+    const { userPool, userPoolClient } = this.createCognitoResources(APP_SUBDOMAIN);
 
     // CRITICAL: Completely separate SSM parameter paths for each environment
     // This prevents any interference between staging and prod
@@ -118,6 +122,8 @@ export class AppStack extends cdk.Stack {
         containerPort: props.config.ecs.containerPort,
         environment: {
           ...envVars.parsed,
+          USER_POOL_CLIENT_ID: userPoolClient.userPoolClientId,
+          USER_POOL_ID: userPool.userPoolId,
           NODE_ENV: props.envName,
         },
         secrets: {
@@ -195,5 +201,106 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, `${APP_NAME}${props.envName}DomainURL`, {
       value: `https://${APP_SUBDOMAIN}.${props.config.dns.domainName}`,
     });
+    
+    new cdk.CfnOutput(this, `${props.envName}UserPoolId`, {
+      value: userPool.userPoolId,
+    });
+    
+    new cdk.CfnOutput(this, `${props.envName}UserPoolClientId`, {
+      value: userPoolClient.userPoolClientId,
+    });
+  }
+
+  // ========== HELPER FUNCTIONS ==========
+
+  /**
+   * Creates Cognito user pool and client with all necessary configuration
+   */
+  private createCognitoResources(appSubdomain: string) {
+    // User pool
+    const userPool = new cognito.UserPool(this, 'userpool', {
+      userPoolName: `${appSubdomain}-user-pool`,
+      selfSignUpEnabled: true,
+      signInAliases: {
+        email: true,
+      },
+      autoVerify: {
+        email: true,
+      },
+      customAttributes: {
+        country: new cognito.StringAttribute({ mutable: true }),
+        city: new cognito.StringAttribute({ mutable: true }),
+        isAdmin: new cognito.StringAttribute({ mutable: true }),
+      },
+      passwordPolicy: {
+        minLength: 8,
+        requireLowercase: true,
+        requireDigits: true,
+        requireUppercase: true,
+        requireSymbols: false,
+      },
+      accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    const cfnUserPool = userPool.node.defaultChild as cognito.CfnUserPool;
+    cfnUserPool.emailConfiguration = {
+      emailSendingAccount: 'COGNITO_DEFAULT',
+    };
+
+    // User Pool Client attributes
+    const standardCognitoAttributes = {
+      givenName: true,
+      familyName: true,
+      email: true,
+      emailVerified: true,
+      address: true,
+      birthdate: true,
+      gender: true,
+      locale: true,
+      middleName: true,
+      fullname: true,
+      nickname: true,
+      phoneNumber: true,
+      phoneNumberVerified: true,
+      profilePicture: true,
+      preferredUsername: true,
+      profilePage: true,
+      timezone: true,
+      lastUpdateTime: true,
+      website: true,
+    };
+    
+    const clientReadAttributes = new cognito.ClientAttributes()
+      .withStandardAttributes(standardCognitoAttributes)
+      .withCustomAttributes(...['country', 'city', 'isAdmin']);
+
+    const clientWriteAttributes = new cognito.ClientAttributes()
+      .withStandardAttributes({
+        ...standardCognitoAttributes,
+        emailVerified: false,
+        phoneNumberVerified: false,
+      })
+      .withCustomAttributes(...['country', 'city']);
+
+    // User Pool Client
+    const userPoolClient = new cognito.UserPoolClient(this, `${appSubdomain}-userpool-client`, {
+      userPool,
+      authFlows: {
+        userPassword: true,
+        adminUserPassword: true,
+      },
+      accessTokenValidity: cdk.Duration.days(1),
+      refreshTokenValidity: cdk.Duration.days(1),
+      idTokenValidity: cdk.Duration.days(1),
+      supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.COGNITO],
+      readAttributes: clientReadAttributes,
+      writeAttributes: clientWriteAttributes,
+    });
+
+    return {
+      userPool,
+      userPoolClient,
+    };
   }
 }

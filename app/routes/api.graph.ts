@@ -1,7 +1,8 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { getNeo4jUri, getNeo4jUsername, getNeo4jPassword } from "~/env";
+import { apiLoaderWithUserAuth } from "~/middleware/loaderWithUserAuth";
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export const loader = apiLoaderWithUserAuth(async ({ request, context }: LoaderFunctionArgs & { context: { userId: string } }) => {
   const url = new URL(request.url);
   const searchParams = url.searchParams;
   
@@ -35,4 +36,4 @@ export async function loader({ request }: LoaderFunctionArgs) {
       "Content-Type": "application/json",
     },
   });
-}
+});

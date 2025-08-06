@@ -27,3 +27,7 @@ export const getRegion = (): string => getEnvVarOrDefault('AWS_REGION', 'us-west
 export const getNeo4jUri = (): string => getEnvVarOrThrow('NEO4J_URI');
 export const getNeo4jUsername = (): string => getEnvVarOrThrow('NEO4J_USERNAME');
 export const getNeo4jPassword = (): string => getEnvVarOrThrow('NEO4J_PASSWORD');
+
+// Cognito helpers
+export const getUserPoolId = (): string => getEnvVarOrThrow('USER_POOL_ID');
+export const getUserPoolClientId = (): string => getEnvVarOrThrow('USER_POOL_CLIENT_ID');
