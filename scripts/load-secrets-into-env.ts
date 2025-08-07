@@ -18,9 +18,9 @@ async function loadSecrets(): Promise<void> {
     
     // Environment-specific parameter paths
     const parametersToLoad: Record<string, string> = {
-      [`/knowledge-server${process.env.NODE_ENV === 'prod' ? '' : '-dev'}/api-keys/neo4j-uri`]: 'NEO4J_URI',
-      [`/knowledge-server${process.env.NODE_ENV === 'prod' ? '' : '-dev'}/api-keys/neo4j-username`]: 'NEO4J_USERNAME',
-      [`/knowledge-server${process.env.NODE_ENV === 'prod' ? '' : '-dev'}/api-keys/neo4j-password`]: 'NEO4J_PASSWORD',
+      [`/knowledge-server${process.env.NODE_ENV === 'prod' ? '' : '-dev'}/api-keys/neptune-endpoint`]: 'NEPTUNE_ENDPOINT',
+      [`/knowledge-server${process.env.NODE_ENV === 'prod' ? '' : '-dev'}/api-keys/neptune-read-endpoint`]: 'NEPTUNE_READ_ENDPOINT',
+      [`/knowledge-server${process.env.NODE_ENV === 'prod' ? '' : '-dev'}/api-keys/neptune-port`]: 'NEPTUNE_PORT',
     };
 
     let envContent = '\n# AWS SSM Parameters - Auto-generated for local development\n';

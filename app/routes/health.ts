@@ -1,15 +1,15 @@
 import type { LoaderFunctionArgs } from "react-router";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // TODO: Add Neo4j health check
-  // TODO: Add MCP server health check
-  
+  // Simple health check - just verify the application is running
+  // Don't check external dependencies to avoid deployment issues
   const health = {
     status: "ok",
     timestamp: new Date().toISOString(),
     services: {
-      neo4j: "ok", // TODO: Implement actual check
-      mcp: "ok",   // TODO: Implement actual check
+      app: "ok",
+      neptune: "not_checked",  // Will implement detailed checks later
+      mcp: "not_checked",      // Will implement detailed checks later
     },
   };
 

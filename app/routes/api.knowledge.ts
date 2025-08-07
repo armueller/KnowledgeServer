@@ -1,5 +1,4 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { getNeo4jUri, getNeo4jUsername, getNeo4jPassword } from "~/env";
 import { apiLoaderWithUserAuth } from "~/middleware/loaderWithUserAuth";
 import { apiActionWithUserAuth } from "~/middleware/actionWithUserAuth";
 

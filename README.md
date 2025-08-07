@@ -129,6 +129,49 @@ Here's the pattern:
 - **Architectural Compliance**: Changes stay consistent with system design principles
 - **Knowledge Preservation**: Senior developer insights remain accessible when they leave
 
+## Competitive Landscape
+
+### How We Compare to Existing Solutions
+
+**Knowledge Server vs. Code Assistant Tools:**
+
+| Feature | Knowledge Server | Sourcegraph Cody | Tabnine | Continue.dev | GitHub Copilot |
+|---------|-----------------|------------------|---------|--------------|----------------|
+| **MCP Integration** | ✅ Native | ✅ Supported | ❌ No | ✅ Built-in | ✅ Supported |
+| **Knowledge Graph** | ✅ Neptune/Neo4j | ✅ Code Graph | ❌ Vector DB | ❌ Basic | ❌ Basic |
+| **Claude-Specific** | ✅ Purpose-built | ❌ Generic | ❌ Generic | ❌ Generic | ❌ Generic |
+| **Persistent Memory** | ✅ Full Context | ⚠️ Session-based | ⚠️ Limited | ⚠️ Limited | ❌ No |
+| **Business Context** | ✅ Complete | ❌ Code-only | ❌ Code-only | ❌ Code-only | ❌ Code-only |
+| **Why Reasoning** | ✅ Architecture WHY | ❌ Code What | ❌ Code What | ❌ Code What | ❌ Code What |
+
+### Our Key Differentiators
+
+**🎯 Claude-Native Design**
+- Built specifically for Claude's reasoning patterns and context limitations
+- Optimizes for Claude's strengths in understanding relationships and architecture
+- Addresses Claude's specific challenges with session boundaries and recency bias
+
+**🧠 Comprehensive Knowledge Capture**  
+- Goes beyond code completion to capture architectural WHY
+- Preserves business context, decisions, and evolution patterns
+- Links code to business value and stakeholder concerns
+
+**💾 True Persistent Memory**
+- Solves Claude's session amnesia with permanent knowledge preservation  
+- Accumulates insights across all development sessions
+- Enables compound learning where Claude gets smarter about your system over time
+
+**📊 Graph-First Architecture**
+- Relationships are first-class citizens, not afterthoughts
+- Semantic queries that understand meaning, not just text matching
+- Traversal patterns that mirror how developers think about code
+
+### Competitive Positioning
+
+Most code assistants focus on **code completion and generation**. Knowledge Server focuses on **code understanding and context preservation**. 
+
+We're not competing with Copilot on code generation - we're solving the problem that comes *after* the code is written: **How does Claude remember and understand your growing system?**
+
 ## Technical Architecture
 
 ### Model Context Protocol (MCP) Integration
@@ -150,9 +193,10 @@ await mcp.searchKnowledge({
 ```
 
 ### Graph Database Foundation
-- **Neo4j-Powered**: Relationships between code elements are first-class citizens
-- **Real-Time Updates**: Knowledge graph stays current with your codebase changes
+- **Neptune-Powered**: AWS-native graph database with enterprise reliability
+- **Real-Time Updates**: Knowledge graph stays current with your codebase changes  
 - **Semantic Queries**: Find patterns by meaning, not just text matching
+- **Relationship-First**: Code dependencies and business context as first-class entities
 
 ### Secure & Private
 - **Your Infrastructure**: Data stays in your AWS environment

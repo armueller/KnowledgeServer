@@ -23,10 +23,10 @@ export const getApiBaseUrl = (): string =>
   getNodeEnv() === 'local' ? 'http://localhost:5173/api' : `${getEnvVarOrDefault('APP_SUBDOMAIN', '')}.tabus10.com/api`;
 export const getRegion = (): string => getEnvVarOrDefault('AWS_REGION', 'us-west-2');
 
-// Neo4j connection helpers
-export const getNeo4jUri = (): string => getEnvVarOrThrow('NEO4J_URI');
-export const getNeo4jUsername = (): string => getEnvVarOrThrow('NEO4J_USERNAME');
-export const getNeo4jPassword = (): string => getEnvVarOrThrow('NEO4J_PASSWORD');
+// Neptune connection helpers
+export const getNeptuneEndpoint = (): string => getEnvVarOrThrow('NEPTUNE_ENDPOINT');
+export const getNeptuneReadEndpoint = (): string => getEnvVarOrThrow('NEPTUNE_READ_ENDPOINT');
+export const getNeptunePort = (): string => getEnvVarOrDefault('NEPTUNE_PORT', '8182');
 
 // Cognito helpers
 export const getUserPoolId = (): string => getEnvVarOrThrow('USER_POOL_ID');

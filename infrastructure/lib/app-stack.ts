@@ -8,6 +8,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as certificatemanager from 'aws-cdk-lib/aws-certificatemanager';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as neptune from '@aws-cdk/aws-neptune-alpha';
 
 import dotenvFlow from 'dotenv-flow';
 
@@ -63,31 +64,14 @@ export class AppStack extends cdk.Stack {
     // This prevents any interference between staging and prod
     const apiKeysPrefix = `/knowledge-server${props.envName === 'prod' ? '' : '-dev'}/api-keys`;
 
-    // Each environment gets its own set of SSM parameters
-    // These will be created independently and won't conflict
-    const neo4jUri = new ssm.StringParameter(this, `${props.envName}Neo4jUri`, {
-      parameterName: `${apiKeysPrefix}/neo4j-uri`,
-      stringValue: 'PLACEHOLDER_VALUE', // Replace this with actual value after deployment
-      description: `Neo4j database URI for ${props.envName}`,
-    });
-
-    const neo4jUsername = new ssm.StringParameter(this, `${props.envName}Neo4jUsername`, {
-      parameterName: `${apiKeysPrefix}/neo4j-username`,
-      stringValue: 'PLACEHOLDER_VALUE', // Replace this with actual value after deployment
-      description: `Neo4j database username for ${props.envName}`,
-    });
-
-    const neo4jPassword = new ssm.StringParameter(this, `${props.envName}Neo4jPassword`, {
-      parameterName: `${apiKeysPrefix}/neo4j-password`,
-      stringValue: 'PLACEHOLDER_VALUE', // Replace this with actual value after deployment
-      description: `Neo4j database password for ${props.envName}`,
-    });
-
     // Create VPC - each environment gets its own VPC
     const vpc = new ec2.Vpc(this, `${APP_NAME}${props.envName}Vpc`, {
       maxAzs: props.config.vpc.maxAzs,
       natGateways: props.config.vpc.natGateways,
     });
+
+    // ========== CREATE NEPTUNE RESOURCES ==========
+    const { neptuneCluster, neptuneEndpoint, neptuneReadEndpoint, neptunePort } = this.createNeptuneResources(APP_SUBDOMAIN, props.envName, apiKeysPrefix, vpc);
 
     // Create ECS Cluster - each environment gets its own cluster
     const cluster = new ecs.Cluster(this, `${APP_NAME}${props.envName}EcsCluster`, {
@@ -127,9 +111,9 @@ export class AppStack extends cdk.Stack {
           NODE_ENV: props.envName,
         },
         secrets: {
-          NEO4J_URI: ecs.Secret.fromSsmParameter(neo4jUri),
-          NEO4J_USERNAME: ecs.Secret.fromSsmParameter(neo4jUsername),
-          NEO4J_PASSWORD: ecs.Secret.fromSsmParameter(neo4jPassword),
+          NEPTUNE_ENDPOINT: ecs.Secret.fromSsmParameter(neptuneEndpoint),
+          NEPTUNE_READ_ENDPOINT: ecs.Secret.fromSsmParameter(neptuneReadEndpoint),
+          NEPTUNE_PORT: ecs.Secret.fromSsmParameter(neptunePort),
         },
       },
       runtimePlatform: {
@@ -301,6 +285,89 @@ export class AppStack extends cdk.Stack {
     return {
       userPool,
       userPoolClient,
+    };
+  }
+
+  /**
+   * Creates Neptune cluster with proper VPC configuration for graph database
+   */
+  private createNeptuneResources(appSubdomain: string, envName: string, apiKeysPrefix: string, vpc: ec2.Vpc) {
+    // Use the same VPC as the main application for simpler networking
+    const neptuneVpc = vpc;
+
+    // Create Neptune-specific parameter groups for optimization
+    const clusterParams = new neptune.ClusterParameterGroup(this, `${appSubdomain}-NeptuneClusterParams`, {
+      description: `Neptune cluster parameters for ${appSubdomain}`,
+      family: neptune.ParameterGroupFamily.NEPTUNE_1_4, // Use Neptune 1.4 family
+      parameters: {
+        neptune_enable_audit_log: '1', // Enable audit logging
+        neptune_query_timeout: '120000', // 2 minute query timeout
+        neptune_result_cache: '1', // Enable result caching
+      },
+    });
+
+    const dbParams = new neptune.ParameterGroup(this, `${appSubdomain}-NeptuneDbParams`, {
+      description: `Neptune database parameters for ${appSubdomain}`,
+      family: neptune.ParameterGroupFamily.NEPTUNE_1_4, // Use Neptune 1.4 family
+      parameters: {
+        neptune_query_timeout: '120000',
+        neptune_dfe_query_engine: 'viaQueryHint', // Use DFE query engine
+      },
+    });
+
+    // Create Neptune cluster
+    const neptuneCluster = new neptune.DatabaseCluster(this, `${appSubdomain}-NeptuneCluster`, {
+      dbClusterName: `${appSubdomain}-knowledge-graph`,
+      vpc: neptuneVpc,
+      vpcSubnets: { subnets: neptuneVpc.privateSubnets },
+      instanceType: neptune.InstanceType.T3_MEDIUM, // Smallest instance for development (t3.medium is the minimum for Neptune)
+      clusterParameterGroup: clusterParams,
+      parameterGroup: dbParams,
+      // Development settings - adjust for production
+      deletionProtection: envName === 'prod',
+      removalPolicy: envName === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      backupRetention: cdk.Duration.days(envName === 'prod' ? 30 : 7),
+    });
+
+    // Create SSM parameters for Neptune endpoints
+    const neptuneEndpoint = new ssm.StringParameter(this, `${envName}NeptuneEndpointParam`, {
+      parameterName: `${apiKeysPrefix}/neptune-endpoint`,
+      stringValue: neptuneCluster.clusterEndpoint.hostname,
+      description: `Neptune cluster endpoint for ${envName}`,
+    });
+
+    const neptuneReadEndpoint = new ssm.StringParameter(this, `${envName}NeptuneReadEndpointParam`, {
+      parameterName: `${apiKeysPrefix}/neptune-read-endpoint`,
+      stringValue: neptuneCluster.clusterReadEndpoint.hostname,
+      description: `Neptune read endpoint for ${envName}`,
+    });
+
+    const neptunePort = new ssm.StringParameter(this, `${envName}NeptunePortParam`, {
+      parameterName: `${apiKeysPrefix}/neptune-port`,
+      stringValue: '8182', // Neptune Gremlin port
+      description: `Neptune port for ${envName}`,
+    });
+
+    // Output Neptune connection details
+    new cdk.CfnOutput(this, `${envName}NeptuneClusterEndpointOutput`, {
+      value: neptuneCluster.clusterEndpoint.hostname,
+      description: 'Neptune cluster write endpoint',
+    });
+
+    new cdk.CfnOutput(this, `${envName}NeptuneReadEndpointOutput`, {
+      value: neptuneCluster.clusterReadEndpoint.hostname,
+      description: 'Neptune cluster read endpoint',
+    });
+
+    // Allow ECS service to connect to Neptune
+    neptuneCluster.connections.allowDefaultPortFromAnyIpv4('Allow ECS connection to Neptune');
+
+    return {
+      neptuneCluster,
+      neptuneVpc,
+      neptuneEndpoint,
+      neptuneReadEndpoint,
+      neptunePort,
     };
   }
 }
