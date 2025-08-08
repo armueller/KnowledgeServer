@@ -21,7 +21,12 @@ export function getNeptuneConnection(): driver.DriverRemoteConnection {
     // Neptune requires wss:// (WebSocket Secure) connection
     const neptuneWsUrl = `wss://${endpoint}:${port}/gremlin`;
     
-    connection = new DriverRemoteConnection(neptuneWsUrl);
+    // Use GraphSON v2 to fix valueMap()/elementMap() compatibility issue with JavaScript driver
+    // This is AWS-recommended solution for Neptune + JavaScript driver compatibility
+    // Issue: GraphBinary (default) and GraphSON v3 return empty objects for property mapping
+    connection = new DriverRemoteConnection(neptuneWsUrl, {
+      mimeType: 'application/vnd.gremlin-v2.0+json'
+    });
   }
   
   return connection;
@@ -39,7 +44,10 @@ export function getNeptuneReadConnection(): driver.DriverRemoteConnection {
     // Neptune requires wss:// (WebSocket Secure) connection
     const neptuneReadWsUrl = `wss://${readEndpoint}:${port}/gremlin`;
     
-    readConnection = new DriverRemoteConnection(neptuneReadWsUrl);
+    // Use GraphSON v2 for read connection consistency
+    readConnection = new DriverRemoteConnection(neptuneReadWsUrl, {
+      mimeType: 'application/vnd.gremlin-v2.0+json'
+    });
   }
   
   return readConnection;

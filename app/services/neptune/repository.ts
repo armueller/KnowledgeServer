@@ -134,7 +134,8 @@ export class VertexRepository extends BaseNeptuneRepository {
       }
     }
     
-    const result = await traversal.next();
+    // Use elementMap() directly in the traversal chain for efficiency
+    const result = await traversal.elementMap().next();
     return this.mapVertexToType<T>(result.value);
   }
   
@@ -147,7 +148,8 @@ export class VertexRepository extends BaseNeptuneRepository {
     let traversal = g.V().has('id', id);
     traversal = this.applySecurityFilter(traversal);
     
-    const result = await traversal.next();
+    // Use elementMap() directly in the traversal chain
+    const result = await traversal.elementMap().next();
     return result.value ? this.mapVertexToType<T>(result.value) : null;
   }
   
@@ -178,8 +180,27 @@ export class VertexRepository extends BaseNeptuneRepository {
       }
     }
     
-    // Count total before pagination
-    const countTraversal = traversal.clone();
+    // Count total before pagination - rebuild traversal instead of clone to avoid Neptune casting issues
+    let countTraversal = query.vertexFilters?.type 
+      ? g.V().hasLabel(query.vertexFilters.type)
+      : g.V();
+    
+    // Reapply security filters
+    countTraversal = this.applySecurityFilter(countTraversal);
+    
+    // Reapply additional filters
+    if (query.vertexFilters) {
+      for (const [key, value] of Object.entries(query.vertexFilters)) {
+        if (key !== 'type' && value !== undefined) {
+          if (Array.isArray(value)) {
+            countTraversal = countTraversal.has(key, P.within(...value));
+          } else {
+            countTraversal = countTraversal.has(key, value);
+          }
+        }
+      }
+    }
+    
     const totalCount = await countTraversal.count().next();
     
     // Apply ordering
@@ -198,9 +219,9 @@ export class VertexRepository extends BaseNeptuneRepository {
       traversal = traversal.limit(query.limit);
     }
     
-    // Execute query
-    const results = await traversal.toList();
-    const data = results.map((v: any) => this.mapVertexToType<T>(v));
+    // Execute query with elementMap() for efficient property retrieval
+    const results = await traversal.elementMap().toList();
+    const data = results.map((elementData: any) => this.mapVertexToType<T>(elementData));
     
     return {
       data,
@@ -256,7 +277,8 @@ export class VertexRepository extends BaseNeptuneRepository {
       }
     }
     
-    const result = await traversal.next();
+    // Use elementMap() directly in the traversal chain
+    const result = await traversal.elementMap().next();
     return result.value ? this.mapVertexToType<T>(result.value) : null;
   }
   
@@ -311,36 +333,32 @@ export class VertexRepository extends BaseNeptuneRepository {
   
   /**
    * Map Gremlin vertex to TypeScript type
+   * Now works with elementMap() data format after GraphSON v2 fix
    */
-  private mapVertexToType<T extends KnowledgeVertex>(vertex: any): T {
-    const properties: any = {};
+  private mapVertexToType<T extends KnowledgeVertex>(elementData: any): T {
+    if (!elementData) {
+      throw new Error('No element data to map');
+    }
     
-    // Extract properties from Gremlin vertex
-    if (vertex.properties) {
-      for (const [key, valueProp] of Object.entries(vertex.properties)) {
-        if (Array.isArray(valueProp)) {
-          // Handle multi-properties
-          properties[key] = valueProp.map((vp: any) => vp.value);
-        } else if (valueProp && typeof valueProp === 'object' && 'value' in valueProp) {
-          // Handle single properties
-          const value = (valueProp as any).value;
-          // Parse JSON strings back to objects
-          if (typeof value === 'string' && (key === 'metadata' || key.endsWith('Config'))) {
-            try {
-              properties[key] = JSON.parse(value);
-            } catch {
-              properties[key] = value;
-            }
-          } else {
-            properties[key] = value;
-          }
+    // With elementMap() and GraphSON v2, properties are directly accessible
+    const properties: any = { ...elementData };
+    
+    // Parse JSON strings back to objects for metadata fields
+    for (const [key, value] of Object.entries(properties)) {
+      if (typeof value === 'string' && (key === 'metadata' || key.endsWith('Config'))) {
+        try {
+          properties[key] = JSON.parse(value);
+        } catch {
+          // Keep as string if not valid JSON
+          properties[key] = value;
         }
       }
     }
     
-    // Add vertex ID and label
-    properties.id = vertex.id;
-    properties.type = vertex.label;
+    // Ensure type is set from label if needed
+    if (properties.label && !properties.type) {
+      properties.type = properties.label;
+    }
     
     return properties as T;
   }
@@ -396,9 +414,8 @@ export class EdgeRepository extends BaseNeptuneRepository {
     for (const [key, value] of Object.entries(edge)) {
       if (key !== 'type' && value !== undefined && value !== null) {
         if (Array.isArray(value)) {
-          for (const item of value) {
-            traversal = traversal.property(cardinality.set, key, item);
-          }
+          // For edges, store arrays as JSON strings since Neptune edges don't support set cardinality well
+          traversal = traversal.property(key, JSON.stringify(value));
         } else if (typeof value === 'object') {
           traversal = traversal.property(key, JSON.stringify(value));
         } else {
@@ -407,7 +424,8 @@ export class EdgeRepository extends BaseNeptuneRepository {
       }
     }
     
-    const result = await traversal.next();
+    // For edges, use valueMap(true) to get properties with id/label
+    const result = await traversal.valueMap(true).next();
     return this.mapEdgeToType<T>(result.value);
   }
   
@@ -426,7 +444,7 @@ export class EdgeRepository extends BaseNeptuneRepository {
       return [];
     }
     
-    // Get edges
+    // Get edges with properties using valueMap(true)
     let traversal = g.V().has('id', vertexId);
     
     if (edgeType) {
@@ -435,32 +453,48 @@ export class EdgeRepository extends BaseNeptuneRepository {
       traversal = traversal.outE();
     }
     
-    const results = await traversal.toList();
-    return results.map((e: any) => this.mapEdgeToType(e));
+    // Use valueMap(true) for edges to get properties with id/label
+    const results = await traversal.valueMap(true).toList();
+    return results.map((edgeData: any) => this.mapEdgeToType(edgeData));
   }
   
   /**
    * Map Gremlin edge to TypeScript type
+   * Now works with valueMap(true) data format for edges
    */
-  private mapEdgeToType<T extends KnowledgeEdge>(edge: any): T {
-    const properties: any = {};
-    
-    // Extract properties from Gremlin edge
-    for (const [key, value] of Object.entries(edge.properties || {})) {
-      if (typeof value === 'string' && key === 'metadata') {
-        try {
-          properties[key] = JSON.parse(value);
-        } catch {
-          properties[key] = value;
-        }
-      } else {
-        properties[key] = value;
-      }
+  private mapEdgeToType<T extends KnowledgeEdge>(edgeData: any): T {
+    if (!edgeData) {
+      throw new Error('No edge data to map');
     }
     
-    // Add edge ID and label
-    properties.id = edge.id;
-    properties.type = edge.label;
+    const properties: any = {};
+    
+    // With valueMap(true) and GraphSON v2, we get a map with special keys
+    // Extract id and label from special keys
+    if (edgeData.id) {
+      properties.id = Array.isArray(edgeData.id) ? edgeData.id[0] : edgeData.id;
+    }
+    if (edgeData.label) {
+      properties.type = Array.isArray(edgeData.label) ? edgeData.label[0] : edgeData.label;
+    }
+    
+    // Extract other properties - they may be in arrays due to set cardinality
+    for (const [key, value] of Object.entries(edgeData)) {
+      if (key !== 'id' && key !== 'label') {
+        // Handle array values from valueMap
+        const actualValue = Array.isArray(value) ? value[0] : value;
+        
+        if (typeof actualValue === 'string' && (key === 'metadata' || key === 'responsibilities' || key === 'tags' || key === 'keywords')) {
+          try {
+            properties[key] = JSON.parse(actualValue);
+          } catch {
+            properties[key] = actualValue;
+          }
+        } else {
+          properties[key] = actualValue;
+        }
+      }
+    }
     
     return properties as T;
   }
