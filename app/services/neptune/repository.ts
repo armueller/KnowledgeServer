@@ -134,8 +134,8 @@ export class VertexRepository extends BaseNeptuneRepository {
       }
     }
     
-    // Use elementMap() directly in the traversal chain for efficiency
-    const result = await traversal.elementMap().next();
+    // Use valueMap(true) to properly handle multi-value properties (arrays)
+    const result = await traversal.valueMap(true).next();
     return this.mapVertexToType<T>(result.value);
   }
   
@@ -148,8 +148,8 @@ export class VertexRepository extends BaseNeptuneRepository {
     let traversal = g.V().has('id', id);
     traversal = this.applySecurityFilter(traversal);
     
-    // Use elementMap() directly in the traversal chain
-    const result = await traversal.elementMap().next();
+    // Use valueMap(true) to preserve multi-value properties
+    const result = await traversal.valueMap(true).next();
     return result.value ? this.mapVertexToType<T>(result.value) : null;
   }
   
@@ -219,8 +219,8 @@ export class VertexRepository extends BaseNeptuneRepository {
       traversal = traversal.limit(query.limit);
     }
     
-    // Execute query with elementMap() for efficient property retrieval
-    const results = await traversal.elementMap().toList();
+    // Execute query with valueMap(true) to preserve multi-value properties
+    const results = await traversal.valueMap(true).toList();
     const data = results.map((elementData: any) => this.mapVertexToType<T>(elementData));
     
     return {
@@ -277,8 +277,8 @@ export class VertexRepository extends BaseNeptuneRepository {
       }
     }
     
-    // Use elementMap() directly in the traversal chain
-    const result = await traversal.elementMap().next();
+    // Use valueMap(true) to preserve multi-value properties
+    const result = await traversal.valueMap(true).next();
     return result.value ? this.mapVertexToType<T>(result.value) : null;
   }
   
@@ -333,31 +333,42 @@ export class VertexRepository extends BaseNeptuneRepository {
   
   /**
    * Map Gremlin vertex to TypeScript type
-   * Now works with elementMap() data format after GraphSON v2 fix
+   * Works with valueMap(true) format which returns arrays for all properties
    */
-  private mapVertexToType<T extends KnowledgeVertex>(elementData: any): T {
-    if (!elementData) {
-      throw new Error('No element data to map');
+  private mapVertexToType<T extends KnowledgeVertex>(vertexData: any): T {
+    if (!vertexData) {
+      throw new Error('No vertex data to map');
     }
     
-    // With elementMap() and GraphSON v2, properties are directly accessible
-    const properties: any = { ...elementData };
+    const properties: any = {};
     
-    // Parse JSON strings back to objects for metadata fields
+    // Process all properties from valueMap(true) format
+    for (const [key, value] of Object.entries(vertexData)) {
+      if (key === 'id') {
+        // id is special - always single value
+        properties.id = Array.isArray(value) ? value[0] : value;
+      } else if (key === 'label') {
+        // label maps to type field
+        properties.type = Array.isArray(value) ? value[0] : value;
+      } else if (Array.isArray(value)) {
+        // valueMap returns arrays for all properties
+        // If array has multiple values, keep as array; otherwise unwrap
+        properties[key] = value.length > 1 ? value : value[0];
+      } else {
+        // Already a single value (shouldn't happen with valueMap but handle it)
+        properties[key] = value;
+      }
+    }
+    
+    // Parse JSON strings for metadata/config fields
     for (const [key, value] of Object.entries(properties)) {
       if (typeof value === 'string' && (key === 'metadata' || key.endsWith('Config'))) {
         try {
           properties[key] = JSON.parse(value);
         } catch {
           // Keep as string if not valid JSON
-          properties[key] = value;
         }
       }
-    }
-    
-    // Ensure type is set from label if needed
-    if (properties.label && !properties.type) {
-      properties.type = properties.label;
     }
     
     return properties as T;

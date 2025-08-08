@@ -181,8 +181,8 @@ REQUIREMENTS:
 1. Return ONLY a valid JSON object, no other text
 2. Analyze the actual model/interface code to determine:
    - modelType: "interface", "type", "class", or "enum" 
-   - properties: array of property names as strings
-   - methods: array of method names as strings
+   - properties: array of properties WITH their types like ["pk: string", "price: number", "isActive: boolean"]
+   - methods: array of method signatures like ["calculate(): number", "validate(input: string): boolean"]
    - extends: what this model extends (as array)
    - implements: what this model implements (as array)
    - Better description based on code analysis
@@ -194,8 +194,8 @@ JSON SCHEMA TO MATCH:
   "description": "string (enhanced from code analysis)",
   "filePath": "string",
   "modelType": "interface|type|class|enum",
-  "properties": ["prop1", "prop2"],
-  "methods": ["method1", "method2"],
+  "properties": ["propName: propType", "pk: string", "price: number"],
+  "methods": ["methodName(): returnType"],
   "extends": ["BaseType"] or undefined,
   "implements": ["Interface1"] or undefined,
   "lineStart": number,
@@ -220,6 +220,11 @@ Return the enhanced JSON object:`;
    */
   private async callClaudeCode(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
+      // Log the prompt being sent to Claude (truncated for readability)
+      if (TEST_MODE) {
+        console.log('      📝 Claude prompt preview:', prompt.substring(0, 200) + '...');
+      }
+      
       const claude = spawn('claude', [], {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: '/Users/austinmueller/Git/RMWM' // Run from RMWM directory so Claude can access files
@@ -238,6 +243,10 @@ Return the enhanced JSON object:`;
 
       claude.on('close', (code) => {
         if (code === 0) {
+          // Log the raw Claude response in test mode
+          if (TEST_MODE) {
+            console.log('      📤 Claude raw response:', output.trim());
+          }
           resolve(output.trim());
         } else {
           reject(new Error(`Claude process exited with code ${code}: ${errorOutput}`));
@@ -259,17 +268,33 @@ Return the enhanced JSON object:`;
    */
   private parseClaudeResponse(claudeResponse: string, sqliteData: any, analysisType: string): any {
     try {
-      // Extract JSON from Claude's response (in case there's extra text)
-      const jsonMatch = claudeResponse.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON found in Claude response');
+      // Extract JSON from Claude's response 
+      // Claude may wrap response in ```json ... ``` blocks
+      let jsonMatch = claudeResponse.match(/```json\s*([\s\S]*?)\s*```/);
+      let jsonString: string;
+      
+      if (jsonMatch) {
+        // Found JSON in code block
+        jsonString = jsonMatch[1];
+      } else {
+        // Try to find raw JSON object
+        jsonMatch = claudeResponse.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('No JSON found in Claude response');
+        }
+        jsonString = jsonMatch[0];
       }
 
       // Clean up undefined values in JSON string before parsing
       // Claude sometimes returns undefined which isn't valid JSON
-      const cleanedJson = jsonMatch[0]
+      const cleanedJson = jsonString
         .replace(/:\s*undefined/g, ': null')
         .replace(/,\s*undefined/g, ', null');
+      
+      // Log the cleaned JSON in test mode
+      if (TEST_MODE) {
+        console.log('      🧹 Cleaned JSON:', cleanedJson);
+      }
       
       const enhanced = JSON.parse(cleanedJson);
       
@@ -316,12 +341,13 @@ Return the enhanced JSON object:`;
         version: '1.0.0'
       };
     } else {
-      // Parse properties object to get property names as string array
+      // Parse properties object to get property names WITH types as string array
       let propertiesArray: string[] = [];
       if (sqliteData.properties) {
         try {
           const propsObj = JSON.parse(sqliteData.properties);
-          propertiesArray = Object.keys(propsObj);
+          // Include property types if available
+          propertiesArray = Object.entries(propsObj).map(([key, value]) => `${key}: ${value}`);
         } catch {
           propertiesArray = [];
         }
@@ -539,6 +565,11 @@ Return the enhanced JSON object:`;
         'function'
       );
 
+      // Log the final JSON being sent to API in test mode
+      if (TEST_MODE) {
+        console.log('      📨 Sending to API:', JSON.stringify(neptuneFunction, null, 2));
+      }
+      
       // Call our API to create the function
       const response = await fetch(`${API_BASE_URL}/knowledge`, {
         method: 'POST',
@@ -617,6 +648,11 @@ Return the enhanced JSON object:`;
         'model'
       );
 
+      // Log the final JSON being sent to API in test mode
+      if (TEST_MODE) {
+        console.log('      📨 Sending to API:', JSON.stringify(neptuneModel, null, 2));
+      }
+      
       const response = await fetch(`${API_BASE_URL}/knowledge`, {
         method: 'POST',
         headers: {
@@ -699,6 +735,11 @@ Return the enhanced JSON object:`;
         version: '1.0.0'
       };
 
+      // Log the final JSON being sent to API in test mode
+      if (TEST_MODE) {
+        console.log('      📨 Sending Architecture to API:', JSON.stringify(neptuneArchitecture, null, 2));
+      }
+      
       const response = await fetch(`${API_BASE_URL}/knowledge`, {
         method: 'POST',
         headers: {
@@ -781,6 +822,11 @@ Return the enhanced JSON object:`;
         version: '1.0.0'
       };
 
+      // Log the final JSON being sent to API in test mode
+      if (TEST_MODE) {
+        console.log('      📨 Sending Code Pattern to API:', JSON.stringify(neptuneCodePattern, null, 2));
+      }
+      
       const response = await fetch(`${API_BASE_URL}/knowledge`, {
         method: 'POST',
         headers: {
@@ -872,6 +918,11 @@ Return the enhanced JSON object:`;
         version: '1.0.0'
       };
 
+      // Log the final JSON being sent to API in test mode
+      if (TEST_MODE) {
+        console.log('      📨 Sending Domain Knowledge to API:', JSON.stringify(neptuneDomainKnowledge, null, 2));
+      }
+      
       const response = await fetch(`${API_BASE_URL}/knowledge`, {
         method: 'POST',
         headers: {
