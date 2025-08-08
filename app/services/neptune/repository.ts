@@ -23,6 +23,8 @@ const SCHEMA_VERSION = '1.0.0';
 
 const { t, P, TextP, order, scope, cardinality, statics } = gremlinProcess;
 const { Graph } = structureRuntime;
+// Anonymous traversal for use in step modulators like or()
+const __ = gremlinProcess.statics;
 
 // Interface for Gremlin path objects
 interface GremlinPath {
@@ -46,24 +48,26 @@ export abstract class BaseNeptuneRepository {
   protected applySecurityFilter(traversal: any): any {
     const { tenantId, userId, teamIds } = this.securityContext;
     
-    // Always enforce tenant isolation first
+    // Apply tenant isolation first
     traversal = traversal.has('tenantId', tenantId);
     
-    // Then apply visibility rules
-    return traversal.or(
-      // Private access - user owns the vertex
-      statics.has('userId', userId).has('visibility', 'private'),
-      
-      // Team access - user is part of the team
-      teamIds.length > 0 
-        ? statics.has('teamId', P.within(...teamIds)).has('visibility', 'team')
-        : statics.has('visibility', 'never'), // Impossible condition if no teams
-      
-      // Organization access - same tenant
-      statics.has('visibility', 'organization'),
-      
-      // Shared access - explicitly shared with user
-      statics.has('sharedWith', userId)
+    // Then apply visibility rules using where() with or()
+    return traversal.where(
+      __.or(
+        // Private access - user owns the vertex
+        __.has('userId', userId).has('visibility', 'private'),
+        
+        // Team access - user is part of the team
+        teamIds.length > 0 
+          ? __.has('teamId', P.within(...teamIds)).has('visibility', 'team')
+          : __.has('visibility', 'never'), // Impossible condition if no teams
+        
+        // Organization access - same tenant
+        __.has('visibility', 'organization'),
+        
+        // Shared access - explicitly shared with user
+        __.has('sharedWith', userId)
+      )
     );
   }
   
@@ -106,13 +110,26 @@ export class VertexRepository extends BaseNeptuneRepository {
   ): Promise<T> {
     const g = getGraphTraversalSource();
     
-    // Generate unique ID
-    const id = `${vertex.type.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Check for duplicate name within the same tenant
+    if (vertex.name) {
+      const existingVertex = await g.V()
+        .has('tenantId', this.securityContext.tenantId)
+        .has('type', vertex.type)
+        .has('name', vertex.name)
+        .valueMap(true)
+        .next();
+        
+      if (existingVertex.value) {
+        const existing = this.mapVertexToType<T>(existingVertex.value);
+        console.log(`Duplicate vertex prevented: ${vertex.name} already exists with id ${existing.id}`);
+        return existing; // Return existing vertex instead of creating duplicate
+      }
+    }
     
+    // Don't set 'id' as a property - Neptune auto-generates vertex IDs
     // Add base properties with security context
     const properties = this.addBaseProperties({
       ...vertex,
-      id,
     });
     
     // Create vertex with all properties
@@ -145,7 +162,8 @@ export class VertexRepository extends BaseNeptuneRepository {
   async findById<T extends KnowledgeVertex>(id: string): Promise<T | null> {
     const g = getReadGraphTraversalSource();
     
-    let traversal = g.V().has('id', id);
+    // Use Neptune's internal vertex ID
+    let traversal = g.V(id);
     traversal = this.applySecurityFilter(traversal);
     
     // Use valueMap(true) to preserve multi-value properties
@@ -240,8 +258,8 @@ export class VertexRepository extends BaseNeptuneRepository {
   ): Promise<T | null> {
     const g = getGraphTraversalSource();
     
-    // Check if user has write access
-    let checkTraversal = g.V().has('id', id);
+    // Check if user has write access using Neptune's internal ID
+    let checkTraversal = g.V(id);
     checkTraversal = this.applySecurityFilter(checkTraversal);
     checkTraversal = checkTraversal.has('accessLevel', P.within('write', 'admin'));
     
@@ -251,7 +269,7 @@ export class VertexRepository extends BaseNeptuneRepository {
     }
     
     // Perform update
-    let traversal = g.V().has('id', id);
+    let traversal = g.V(id);
     
     // Update properties
     const now = Date.now();
@@ -288,10 +306,15 @@ export class VertexRepository extends BaseNeptuneRepository {
   async deleteVertex(id: string): Promise<boolean> {
     const g = getGraphTraversalSource();
     
-    // Check if user has admin access
-    let checkTraversal = g.V().has('id', id);
+    // Check if user owns the vertex OR has admin access using Neptune's internal ID
+    let checkTraversal = g.V(id);
     checkTraversal = this.applySecurityFilter(checkTraversal);
-    checkTraversal = checkTraversal.has('accessLevel', 'admin');
+    
+    // Allow deletion if user owns the vertex OR has admin access
+    checkTraversal = checkTraversal.or(
+      __.has('userId', this.securityContext.userId),
+      __.has('accessLevel', 'admin')
+    );
     
     const canDelete = await checkTraversal.hasNext();
     if (!canDelete) {
@@ -299,7 +322,7 @@ export class VertexRepository extends BaseNeptuneRepository {
     }
     
     // Delete vertex and all its edges
-    await g.V().has('id', id).drop().next();
+    await g.V(id).drop().next();
     return true;
   }
   
@@ -309,8 +332,8 @@ export class VertexRepository extends BaseNeptuneRepository {
   async shareVertex(id: string, shareWith: string[], visibility: VisibilityLevel = 'shared'): Promise<boolean> {
     const g = getGraphTraversalSource();
     
-    // Check if user has admin access to share
-    let checkTraversal = g.V().has('id', id);
+    // Check if user has admin access to share using Neptune's internal ID
+    let checkTraversal = g.V(id);
     checkTraversal = this.applySecurityFilter(checkTraversal);
     checkTraversal = checkTraversal.has('accessLevel', P.within('write', 'admin'));
     
@@ -320,7 +343,7 @@ export class VertexRepository extends BaseNeptuneRepository {
     }
     
     // Update sharing
-    let traversal = g.V().has('id', id)
+    let traversal = g.V(id)
       .property('visibility', visibility);
     
     for (const userId of shareWith) {
@@ -390,11 +413,11 @@ export class EdgeRepository extends BaseNeptuneRepository {
   ): Promise<T> {
     const g = getGraphTraversalSource();
     
-    // Check that user has access to both vertices
-    let fromCheck = g.V().has('id', fromVertexId);
+    // Check that user has access to both vertices using Neptune's internal IDs
+    let fromCheck = g.V(fromVertexId);
     fromCheck = this.applySecurityFilter(fromCheck);
     
-    let toCheck = g.V().has('id', toVertexId);
+    let toCheck = g.V(toVertexId);
     toCheck = this.applySecurityFilter(toCheck);
     
     const [canAccessFrom, canAccessTo] = await Promise.all([
@@ -410,9 +433,9 @@ export class EdgeRepository extends BaseNeptuneRepository {
     const id = `${edge.type.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const now = Date.now();
     
-    let traversal = g.V().has('id', fromVertexId)
+    let traversal = g.V(fromVertexId)
       .addE(edge.type)
-      .to(statics.V().has('id', toVertexId))
+      .to(statics.V(toVertexId))
       .property('id', id)
       .property('tenantId', this.securityContext.tenantId)
       .property('userId', this.securityContext.userId)
@@ -446,8 +469,8 @@ export class EdgeRepository extends BaseNeptuneRepository {
   async findEdgesFrom(vertexId: string, edgeType?: string): Promise<KnowledgeEdge[]> {
     const g = getReadGraphTraversalSource();
     
-    // Check vertex access
-    let vertexCheck = g.V().has('id', vertexId);
+    // Check vertex access using Neptune's internal ID
+    let vertexCheck = g.V(vertexId);
     vertexCheck = this.applySecurityFilter(vertexCheck);
     
     const canAccess = await vertexCheck.hasNext();
@@ -456,7 +479,7 @@ export class EdgeRepository extends BaseNeptuneRepository {
     }
     
     // Get edges with properties using valueMap(true)
-    let traversal = g.V().has('id', vertexId);
+    let traversal = g.V(vertexId);
     
     if (edgeType) {
       traversal = traversal.outE(edgeType);
@@ -533,8 +556,8 @@ export class KnowledgeGraphRepository {
   ): Promise<any> {
     const g = getReadGraphTraversalSource();
     
-    // Apply security filter to start vertex
-    let traversal = g.V().has('id', startVertexId);
+    // Apply security filter to start vertex using Neptune's internal ID
+    let traversal = g.V(startVertexId);
     traversal = this.vertices['applySecurityFilter'](traversal);
     
     // Build path traversal

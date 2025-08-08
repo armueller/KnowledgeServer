@@ -14,7 +14,7 @@ import fetch from 'node-fetch';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { spawn } from 'child_process';
-import { readFile } from 'fs/promises';
+import { readFile, writeFile } from 'fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,6 +31,9 @@ const AUTH_PASSWORD = process.env.MIGRATION_PASSWORD || '';
 
 // Test mode - set to true to process only one of each vertex type for validation
 const TEST_MODE = process.argv.includes('--test');
+const TEST_RELATIONSHIPS = process.argv.includes('--test-relationships');
+const RELATIONSHIPS_ONLY = process.argv.includes('--relationships-only');
+const SAVE_FAILED_ITEMS = !process.argv.includes('--no-save-failed');
 
 interface MigrationStats {
   functions: { total: number; migrated: number; skipped: number; errors: number };
@@ -39,6 +42,14 @@ interface MigrationStats {
   codePatterns: { total: number; migrated: number; skipped: number; errors: number };
   domainKnowledge: { total: number; migrated: number; skipped: number; errors: number };
   relationships: { total: number; migrated: number; skipped: number; errors: number };
+}
+
+interface FailedItem {
+  type: string;
+  name: string;
+  id?: number;
+  error: string;
+  data?: any;
 }
 
 interface MigratedVertex {
@@ -52,7 +63,10 @@ class RMWMMigrator {
   private db: Database.Database;
   private stats: MigrationStats;
   private migratedVertices: Map<string, MigratedVertex> = new Map(); // key: "${type}_${sqliteId}"
+  private existingFunctions = new Map<string, any>(); // name -> function data
+  private existingModels = new Map<string, any>(); // name -> model data
   private sessionCookie: string = ''; // Store authentication cookie
+  private failedItems: FailedItem[] = []; // Track failed items for retry
 
   constructor() {
     this.db = new Database(RMWM_DB_PATH, { readonly: true });
@@ -77,12 +91,21 @@ class RMWMMigrator {
     try {
       // Check if file exists and is accessible
       let sourceCode = '';
-      const fullPath = join('/Users/austinmueller/Git/RMWM', filePath);
+      // Fix file path by replacing .. with .$ticker. (SQLite stores dynamic routes with .. instead of .$ticker.)
+      // Use simple string replacement to avoid regex escaping issues
+      const normalizedPath = filePath.split('..').join('.$ticker.');
+      const fullPath = join('/Users/austinmueller/Git/RMWM', normalizedPath);
+      
+      // Debug log for file path issues
+      if (filePath.includes('..')) {
+        console.log(`      📝 Path normalization: ${filePath} → ${normalizedPath}`);
+      }
       
       try {
         sourceCode = await readFile(fullPath, 'utf-8');
       } catch (fileError) {
-        console.warn(`   📄 Could not read file ${filePath}, using SQLite data only`);
+        console.warn(`   📄 Could not read file ${normalizedPath} (original: ${filePath}), using SQLite data only`);
+        console.warn(`      Full path attempted: ${fullPath}`);
         return this.fallbackToSqliteData(sqliteData, analysisType);
       }
 
@@ -298,12 +321,22 @@ Return the enhanced JSON object:`;
       
       const enhanced = JSON.parse(cleanedJson);
       
+      // CRITICAL: Override security fields to prevent Claude from setting them incorrectly
+      // These fields should NEVER be controlled by AI output
+      enhanced.visibility = 'private';  // ALWAYS private for migrated data
+      enhanced.accessLevel = 'write';   // ALWAYS write for migrated data
+      
+      // Remove any tenant/user fields that Claude might have added
+      delete enhanced.tenantId;
+      delete enhanced.userId;
+      delete enhanced.teamId;
+      
       // Validate required fields are present
       if (!enhanced.type || !enhanced.name || !enhanced.description) {
         throw new Error('Missing required fields in Claude response');
       }
 
-      console.log(`   🤖 Claude enhanced ${analysisType}: ${enhanced.name}`);
+      console.log(`   🤖 Claude enhanced ${analysisType}: ${enhanced.name} (forced visibility: private)`);
       return enhanced;
       
     } catch (parseError) {
@@ -328,7 +361,8 @@ Return the enhanced JSON object:`;
         lineStart: sqliteData.line_number || 0,
         lineEnd: sqliteData.line_number || 0,
         returnType: sqliteData.return_type || 'void',
-        parameters: sqliteData.parameters ? JSON.parse(sqliteData.parameters) : [],
+        parameters: sqliteData.parameters ? 
+          JSON.parse(sqliteData.parameters).map((p: any) => typeof p === 'string' ? p : JSON.stringify(p)) : [],
         sideEffects: [], // Unknown, leave empty
         project: 'RMWM',
         domain: 'code',
@@ -382,13 +416,126 @@ Return the enhanced JSON object:`;
     }
   }
 
+  private async loadExistingItems(): Promise<void> {
+    console.log('📥 Loading existing items from Neptune to avoid re-migration...');
+    
+    try {
+      // Get all functions
+      const functionsResponse = await fetch(`${API_BASE_URL}/knowledge?type=Function&limit=200`, {
+        headers: { 'Cookie': this.sessionCookie },
+      });
+      
+      if (functionsResponse.ok) {
+        const functionsData = await functionsResponse.json();
+        console.log(`   📦 Found ${functionsData.data.length} existing functions`);
+        
+        for (const func of functionsData.data) {
+          this.existingFunctions.set(func.name, func);
+        }
+      }
+      
+      // Get all models
+      const modelsResponse = await fetch(`${API_BASE_URL}/knowledge?type=Model&limit=100`, {
+        headers: { 'Cookie': this.sessionCookie },
+      });
+      
+      if (modelsResponse.ok) {
+        const modelsData = await modelsResponse.json();
+        console.log(`   📦 Found ${modelsData.data.length} existing models`);
+        
+        for (const model of modelsData.data) {
+          this.existingModels.set(model.name, model);
+        }
+      }
+      
+    } catch (error) {
+      console.warn('   ⚠️  Could not load existing items, will check individually:', error);
+    }
+    
+    console.log('✅ Existing items loaded\n');
+  }
+
+  private async loadExistingVertices(): Promise<void> {
+    console.log('📥 Loading existing vertices from Neptune...');
+    
+    try {
+      // Get functions
+      const functionsResponse = await fetch(`${API_BASE_URL}/knowledge?type=Function&limit=200`, {
+        headers: {
+          'Cookie': this.sessionCookie,
+        },
+      });
+      
+      if (functionsResponse.ok) {
+        const functionsData = await functionsResponse.json();
+        console.log(`   📦 Found ${functionsData.data.length} functions`);
+        
+        // Map Neptune vertices back to SQLite IDs based on name
+        const functionsByName = this.db.prepare('SELECT id, name FROM functions').all();
+        const nameToId = new Map(functionsByName.map((f: any) => [f.name, f.id]));
+        
+        for (const func of functionsData.data) {
+          const sqliteId = nameToId.get(func.name);
+          if (sqliteId) {
+            this.migratedVertices.set(`function_${sqliteId}`, {
+              neptuneId: func.id,
+              sqliteId,
+              name: func.name,
+              type: 'Function'
+            });
+          }
+        }
+      }
+      
+      // Get models
+      const modelsResponse = await fetch(`${API_BASE_URL}/knowledge?type=Model&limit=200`, {
+        headers: {
+          'Cookie': this.sessionCookie,
+        },
+      });
+      
+      if (modelsResponse.ok) {
+        const modelsData = await modelsResponse.json();
+        console.log(`   📦 Found ${modelsData.data.length} models`);
+        
+        const modelsByName = this.db.prepare('SELECT id, name FROM models').all();
+        const modelNameToId = new Map(modelsByName.map((m: any) => [m.name, m.id]));
+        
+        for (const model of modelsData.data) {
+          const sqliteId = modelNameToId.get(model.name);
+          if (sqliteId) {
+            this.migratedVertices.set(`model_${sqliteId}`, {
+              neptuneId: model.id,
+              sqliteId,
+              name: model.name,
+              type: 'Model'
+            });
+          }
+        }
+      }
+      
+      console.log(`   ✅ Loaded ${this.migratedVertices.size} vertex mappings`);
+    } catch (error) {
+      console.error('❌ Failed to load existing vertices:', error);
+      throw error;
+    }
+  }
+  
   async migrate(): Promise<void> {
     console.log('🚀 Starting RMWM Context Database Migration to Neptune');
     console.log(`📊 Source: ${RMWM_DB_PATH}`);
     console.log(`🎯 Target: ${API_BASE_URL}`);
-    console.log('🤖 Using Claude Code for intelligent source code analysis');
+    if (!RELATIONSHIPS_ONLY) {
+      console.log('🤖 Using Claude Code for intelligent source code analysis');
+    }
     if (TEST_MODE) {
       console.log('🧪 TEST MODE: Processing only one of each vertex type for validation');
+    }
+    if (TEST_RELATIONSHIPS) {
+      console.log('🔗 RELATIONSHIP TEST MODE: Will migrate a few vertices and test relationships between them');
+    }
+    if (RELATIONSHIPS_ONLY) {
+      console.log('🔗 RELATIONSHIPS ONLY MODE: Will only migrate relationships using existing vertices');
     }
     console.log('');
 
@@ -401,21 +548,36 @@ Return the enhanced JSON object:`;
       
       // Get migration statistics
       await this.gatherStats();
+      
+      // Load existing functions and models to avoid re-migration
+      await this.loadExistingItems();
       this.printStats();
 
       // Migrate data in order (vertices first, then relationships)
       console.log('📦 Starting data migration...\n');
       
-      await this.migrateFunctions();
-      await this.migrateModels();
-      await this.migrateArchitecture();
-      await this.migrateCodePatterns();
-      await this.migrateDomainKnowledge();
+      if (RELATIONSHIPS_ONLY) {
+        // Load existing vertices from Neptune instead of migrating new ones
+        await this.loadExistingVertices();
+      } else if (TEST_RELATIONSHIPS) {
+        // In relationship test mode, only migrate functions and models (which have relationships)
+        console.log('🧪 Relationship test mode: migrating only functions and models');
+        await this.migrateFunctions();
+        await this.migrateModels();
+        // Skip other vertex types in relationship test mode
+      } else {
+        // Normal migration (full or test mode)
+        await this.migrateFunctions();
+        await this.migrateModels();
+        await this.migrateArchitecture();
+        await this.migrateCodePatterns();
+        await this.migrateDomainKnowledge();
+      }
       
       // Now migrate relationships between the vertices
       await this.migrateRelationships();
       
-      this.printFinalResults();
+      await this.printFinalResults();
 
     } catch (error) {
       console.error('❌ Migration failed:', error);
@@ -536,8 +698,13 @@ Return the enhanced JSON object:`;
     
     const functions = this.db.prepare(query).all();
     
-    // In test mode, only process the first function
-    const functionsToProcess = TEST_MODE ? functions.slice(0, 1) : functions;
+    // In test mode, only process a sample
+    let functionsToProcess = functions;
+    if (TEST_MODE) {
+      functionsToProcess = functions.slice(0, 1);
+    } else if (TEST_RELATIONSHIPS) {
+      functionsToProcess = functions.slice(0, 5); // Process 5 functions for relationship testing
+    }
     
     // Process functions sequentially to avoid overwhelming Claude subprocess
     for (let i = 0; i < functionsToProcess.length; i++) {
@@ -557,6 +724,22 @@ Return the enhanced JSON object:`;
 
   private async migrateFunction(sqliteFunc: any): Promise<void> {
     try {
+      // Check if function already exists in Neptune (pre-loaded)
+      const existing = this.existingFunctions.get(sqliteFunc.name);
+      if (existing) {
+        console.log(`   ⏭️  Function ${sqliteFunc.name} already exists, skipping`);
+        this.stats.functions.skipped++;
+        
+        // Still track for relationship creation
+        this.migratedVertices.set(`function_${sqliteFunc.id}`, {
+          neptuneId: existing.id,
+          sqliteId: sqliteFunc.id,
+          name: sqliteFunc.name,
+          type: 'Function'
+        });
+        return;
+      }
+      
       // Use Claude to analyze the source file and enhance the SQLite data
       console.log(`   🔍 Analyzing function: ${sqliteFunc.name}`);
       const neptuneFunction = await this.analyzeWithClaude(
@@ -598,10 +781,24 @@ Return the enhanced JSON object:`;
         const error = await response.text();
         console.warn(`   ⚠️  Failed to migrate function ${sqliteFunc.name}: ${error}`);
         this.stats.functions.errors++;
+        this.failedItems.push({
+          type: 'function',
+          name: sqliteFunc.name,
+          id: sqliteFunc.id,
+          error,
+          data: neptuneFunction
+        });
       }
     } catch (error) {
       console.warn(`   ⚠️  Error migrating function ${sqliteFunc.name}:`, error);
       this.stats.functions.errors++;
+      this.failedItems.push({
+        type: 'function',
+        name: sqliteFunc.name,
+        id: sqliteFunc.id,
+        error: error instanceof Error ? error.message : String(error),
+        data: enhanced
+      });
     }
   }
 
@@ -619,8 +816,13 @@ Return the enhanced JSON object:`;
     
     const models = this.db.prepare(query).all();
     
-    // In test mode, only process the first model
-    const modelsToProcess = TEST_MODE ? models.slice(0, 1) : models;
+    // In test mode, only process a sample
+    let modelsToProcess = models;
+    if (TEST_MODE) {
+      modelsToProcess = models.slice(0, 1);
+    } else if (TEST_RELATIONSHIPS) {
+      modelsToProcess = models.slice(0, 5); // Process 5 models for relationship testing
+    }
     
     // Process models sequentially to avoid overwhelming Claude subprocess
     for (let i = 0; i < modelsToProcess.length; i++) {
@@ -640,6 +842,22 @@ Return the enhanced JSON object:`;
 
   private async migrateModel(sqliteModel: any): Promise<void> {
     try {
+      // Check if model already exists in Neptune (pre-loaded)
+      const existing = this.existingModels.get(sqliteModel.name);
+      if (existing) {
+        console.log(`   ⏭️  Model ${sqliteModel.name} already exists, skipping`);
+        this.stats.models.skipped++;
+        
+        // Still track for relationship creation
+        this.migratedVertices.set(`model_${sqliteModel.id}`, {
+          neptuneId: existing.id,
+          sqliteId: sqliteModel.id,
+          name: sqliteModel.name,
+          type: 'Model'
+        });
+        return;
+      }
+      
       // Use Claude to analyze the source file and enhance the SQLite data
       console.log(`   🔍 Analyzing model: ${sqliteModel.name}`);
       const neptuneModel = await this.analyzeWithClaude(
@@ -679,10 +897,24 @@ Return the enhanced JSON object:`;
         const error = await response.text();
         console.warn(`   ⚠️  Failed to migrate model ${sqliteModel.name}: ${error}`);
         this.stats.models.errors++;
+        this.failedItems.push({
+          type: 'model',
+          name: sqliteModel.name,
+          id: sqliteModel.id,
+          error,
+          data: neptuneFunction
+        });
       }
     } catch (error) {
       console.warn(`   ⚠️  Error migrating model ${sqliteModel.name}:`, error);
       this.stats.models.errors++;
+      this.failedItems.push({
+        type: 'model',
+        name: sqliteModel.name,
+        id: sqliteModel.id,
+        error: error instanceof Error ? error.message : String(error),
+        data: enhanced
+      });
     }
   }
 
@@ -766,10 +998,24 @@ Return the enhanced JSON object:`;
         const error = await response.text();
         console.warn(`   ⚠️  Failed to migrate architecture ${sqliteArch.pattern_name}: ${error}`);
         this.stats.architecture.errors++;
+        this.failedItems.push({
+          type: 'architecture',
+          name: sqliteArch.pattern_name,
+          id: sqliteArch.id,
+          error,
+          data: neptuneFunction
+        });
       }
     } catch (error) {
       console.warn(`   ⚠️  Error migrating architecture ${sqliteArch.pattern_name}:`, error);
       this.stats.architecture.errors++;
+      this.failedItems.push({
+        type: 'architecture',
+        name: sqliteArch.pattern_name,
+        id: sqliteArch.id,
+        error: error instanceof Error ? error.message : String(error),
+        data: enhanced
+      });
     }
   }
 
@@ -853,10 +1099,24 @@ Return the enhanced JSON object:`;
         const error = await response.text();
         console.warn(`   ⚠️  Failed to migrate code pattern ${sqlitePattern.pattern_name}: ${error}`);
         this.stats.codePatterns.errors++;
+        this.failedItems.push({
+          type: 'codePattern',
+          name: sqlitePattern.pattern_name,
+          id: sqlitePattern.id,
+          error,
+          data: neptuneFunction
+        });
       }
     } catch (error) {
       console.warn(`   ⚠️  Error migrating code pattern ${sqlitePattern.pattern_name}:`, error);
       this.stats.codePatterns.errors++;
+      this.failedItems.push({
+        type: 'codePattern',
+        name: sqlitePattern.pattern_name,
+        id: sqlitePattern.id,
+        error: error instanceof Error ? error.message : String(error),
+        data: enhanced
+      });
     }
   }
 
@@ -949,20 +1209,38 @@ Return the enhanced JSON object:`;
         const error = await response.text();
         console.warn(`   ⚠️  Failed to migrate domain knowledge ${sqliteEntry.topic}: ${error}`);
         this.stats.domainKnowledge.errors++;
+        this.failedItems.push({
+          type: 'domainKnowledge',
+          name: sqliteEntry.topic,
+          id: sqliteEntry.id,
+          error,
+          data: neptuneFunction
+        });
       }
     } catch (error) {
       console.warn(`   ⚠️  Error migrating domain knowledge ${sqliteEntry.topic}:`, error);
       this.stats.domainKnowledge.errors++;
+      this.failedItems.push({
+        type: 'domainKnowledge',
+        name: sqliteEntry.topic,
+        id: sqliteEntry.id,
+        error: error instanceof Error ? error.message : String(error),
+        data: enhanced
+      });
     }
   }
 
   private async migrateRelationships(): Promise<void> {
-    if (TEST_MODE) {
-      console.log('🔗 Skipping relationships in test mode (only one of each vertex type)');
+    if (TEST_MODE && !TEST_RELATIONSHIPS) {
+      console.log('🔗 Skipping relationships in test mode (use --test-relationships to test them)');
       return;
     }
     
-    console.log('🔗 Migrating Relationships...');
+    if (TEST_RELATIONSHIPS) {
+      console.log('\n🔗 Testing relationship migration with sample relationships...');
+    } else {
+      console.log('🔗 Migrating Relationships...');
+    }
     
     // Function dependencies (function -> function relationships)
     await this.migrateFunctionDependencies();
@@ -1012,7 +1290,7 @@ Return the enhanced JSON object:`;
         fromVertexId: fromVertex.neptuneId,
         toVertexId: toVertex.neptuneId,
         type: relationshipType,
-        visibility: 'team',
+        visibility: 'private', // Use private visibility to match the vertices
       };
 
       const response = await fetch(`${API_BASE_URL}/relationships`, {
@@ -1042,7 +1320,7 @@ Return the enhanced JSON object:`;
   private async migrateFunctionModels(): Promise<void> {
     console.log('   🏗️  Migrating function-model relationships...');
     
-    const query = `
+    let query = `
       SELECT fm.*, 
              f.name as function_name,
              m.name as model_name
@@ -1050,6 +1328,10 @@ Return the enhanced JSON object:`;
       JOIN functions f ON fm.function_id = f.id
       JOIN models m ON fm.model_id = m.id
     `;
+    
+    if (TEST_RELATIONSHIPS) {
+      query += ' LIMIT 3';
+    }
     
     const relationships = this.db.prepare(query).all();
     
@@ -1075,7 +1357,7 @@ Return the enhanced JSON object:`;
         fromVertexId: fromVertex.neptuneId,
         toVertexId: toVertex.neptuneId,
         type: 'USES',
-        visibility: 'team',
+        visibility: 'private', // Use private visibility to match the vertices
       };
 
       const response = await fetch(`${API_BASE_URL}/relationships`, {
@@ -1105,7 +1387,7 @@ Return the enhanced JSON object:`;
   private async migrateModelDependencies(): Promise<void> {
     console.log('   🔗 Migrating model dependencies...');
     
-    const query = `
+    let query = `
       SELECT md.*, 
              m1.name as model_name,
              m2.name as depends_on_model_name
@@ -1113,6 +1395,10 @@ Return the enhanced JSON object:`;
       JOIN models m1 ON md.model_id = m1.id
       JOIN models m2 ON md.depends_on_model_id = m2.id
     `;
+    
+    if (TEST_RELATIONSHIPS) {
+      query += ' LIMIT 3';
+    }
     
     const dependencies = this.db.prepare(query).all();
     
@@ -1140,7 +1426,7 @@ Return the enhanced JSON object:`;
         fromVertexId: fromVertex.neptuneId,
         toVertexId: toVertex.neptuneId,
         type: relationshipType,
-        visibility: 'team',
+        visibility: 'private', // Use private visibility to match the vertices
       };
 
       const response = await fetch(`${API_BASE_URL}/relationships`, {
@@ -1167,7 +1453,26 @@ Return the enhanced JSON object:`;
     }
   }
 
-  private printFinalResults(): void {
+  private async saveFailedItems(): Promise<void> {
+    if (this.failedItems.length === 0 || !SAVE_FAILED_ITEMS) {
+      return;
+    }
+    
+    const failedItemsPath = join(__dirname, `migration-failed-items-${Date.now()}.json`);
+    try {
+      await writeFile(failedItemsPath, JSON.stringify({
+        timestamp: new Date().toISOString(),
+        stats: this.stats,
+        failedItems: this.failedItems
+      }, null, 2));
+      console.log(`\n💾 Failed items saved to: ${failedItemsPath}`);
+      console.log('   You can retry these items by modifying the migration script to load from this file.');
+    } catch (error) {
+      console.error('⚠️  Failed to save failed items:', error);
+    }
+  }
+  
+  private async printFinalResults(): Promise<void> {
     console.log('\n✅ Migration Complete!');
     console.log('📊 Final Results:');
     console.log(`   Functions: ${this.stats.functions.migrated} migrated, ${this.stats.functions.skipped} skipped, ${this.stats.functions.errors} errors`);
@@ -1187,6 +1492,7 @@ Return the enhanced JSON object:`;
     console.log(`\n🎯 Summary: ${totalMigrated} items migrated successfully`);
     if (totalErrors > 0) {
       console.log(`⚠️  ${totalErrors} items had errors and may need manual review`);
+      await this.saveFailedItems();
     }
     console.log(`\n📈 Migrated ${this.migratedVertices.size} vertices with relationships`);
     console.log('\n💡 Next steps:');
@@ -1208,9 +1514,12 @@ async function main() {
     console.log('🚀 RMWM Context Database Migration to Neptune');
     console.log('');
     console.log('Usage:');
-    console.log('  npm run migrate:rmwm           # Full migration');
-    console.log('  npm run migrate:rmwm --test    # Test mode: migrate only 1 of each vertex type');
-    console.log('  npm run migrate:rmwm --help    # Show this help');
+    console.log('  npm run migrate:rmwm                  # Full migration');
+    console.log('  npm run migrate:rmwm --test           # Test mode: migrate only 1 of each vertex type');
+    console.log('  npm run migrate:rmwm --test-relationships # Test relationship migration with sample data');
+    console.log('  npm run migrate:rmwm --relationships-only # Only migrate relationships (uses existing vertices)');
+    console.log('  npm run migrate:rmwm --no-save-failed # Don\'t save failed items to JSON');
+    console.log('  npm run migrate:rmwm --help           # Show this help');
     console.log('');
     console.log('Test mode is recommended before running full migration to validate:');
     console.log('  - Claude Code integration works');
