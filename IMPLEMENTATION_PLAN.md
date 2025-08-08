@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Goal**: Create a Neo4j-based knowledge server that manages contextual knowledge across all projects, with a React Router v7 admin frontend, API access, and MCP server integration for seamless Claude interaction.
+**Goal**: Create a Neptune-based knowledge server that manages contextual knowledge across all projects, with a React Router v7 admin frontend, API access, and MCP server integration for seamless Claude interaction.
 
 **Repository**: `/Users/austinmueller/Git/KnowledgeServer/`
 
@@ -10,15 +10,17 @@
 
 ### Key Technologies Analyzed
 
-#### Neo4j with TypeScript (2025)
-- **Neo4j JavaScript Driver v5.2+**: Enhanced TypeScript support with generics for Node/Relationship types
-- **Type Safety**: Interfaces to define record types returned by Cypher queries
-- **Performance**: Optimized for modern Node.js with connection pooling
+#### AWS Neptune with Gremlin (2025)
+- **Gremlin JavaScript Driver v3.7.3**: Graph traversal support with Neptune compatibility
+- **GraphSON v2 Serialization**: Resolved property retrieval compatibility issues
+- **Type Safety**: TypeScript interfaces for vertices and edges with security context
+- **Multi-tenant Security**: Repository pattern with automatic tenant isolation
 - **Best Practices**: 
-  - Specify node labels in queries
-  - Create indexes for frequently filtered properties  
-  - Use CREATE instead of MERGE for new data
-  - Proper session and driver cleanup
+  - Use elementMap() for vertex property retrieval
+  - Use valueMap(true) for edge properties  
+  - Avoid traversal.clone() - rebuild count queries instead
+  - Store edge arrays as JSON to avoid cardinality issues
+  - Use statics.V() for anonymous traversals in edge creation
 
 #### React Router v7 with TypeScript
 - **Full-Stack Framework**: Merger of Remix with React Router
@@ -43,118 +45,139 @@
 │ React Router v7 Application         │
 │ ├── Frontend (React + TypeScript)   │
 │ ├── API Routes (/api/*)             │
-│ ├── Neo4j Driver Integration        │
+│ ├── Neptune Gremlin Integration     │
 │ └── MCP Server Integration          │
 └─────────────────────────────────────┘
            │
-           ├── Neo4j JavaScript Driver
+           ├── Gremlin JavaScript Driver
            │
 ┌─────────────────────────────────────┐
-│ Neo4j Database Server               │
-│ (AuraDB or containerized)           │
+│ AWS Neptune Database                │
+│ (Managed Graph Database)            │
 └─────────────────────────────────────┘
 ```
 
-### Neo4j Graph Data Model
+### Neptune Graph Data Model
 
-#### Core Node Types
-```cypher
-// Function nodes
-(:Function:CodeElement {
-  name: string,
-  filePath: string, 
-  signature: string,
-  description: string,
-  isExported: boolean,
-  isAsync: boolean,
-  lineNumber: number,
-  returnType: string,
-  parameters: string // JSON
-})
+#### Core Vertex Types
+```typescript
+// Function vertices (implemented)
+interface FunctionVertex extends KnowledgeVertex {
+  type: "Function"
+  name: string
+  filePath: string
+  signature: string
+  description: string
+  isAsync: boolean
+  isPure: boolean
+  lineStart: number
+  lineEnd: number
+  returnType: string
+  parameters: string[]
+  sideEffects: string[]
+}
 
-// Model nodes  
-(:Model:TypeDefinition {
-  name: string,
-  filePath: string,
-  modelType: string, // 'interface', 'type', 'class', 'enum'
-  description: string,
-  properties: string, // JSON
-  extendsFrom: string
-})
+// System vertices (implemented)
+interface SystemVertex extends KnowledgeVertex {
+  type: "System"
+  name: string
+  description: string
+  systemDomain: string
+  boundaries: string[]
+  interfaces: string[]
+  contracts: string[]
+}
 
-// Architecture Pattern nodes
-(:Architecture:Pattern {
-  patternName: string,
-  description: string,
-  purpose: string,
-  implementation: string,
-  fileStructure: string, // JSON
-  exampleFiles: string,
-  constraints: string
-})
+// Model vertices (to implement)
+interface ModelVertex extends KnowledgeVertex {
+  type: "Model"
+  name: string
+  filePath: string
+  modelType: string // 'interface', 'type', 'class', 'enum'
+  description: string
+  properties: Record<string, any>
+  extendsFrom?: string
+}
 
-// Code Pattern nodes
-(:CodePattern:Pattern {
-  patternName: string,
-  patternType: string, // 'react', 'redux', 'utility', 'testing'
-  description: string,
-  useCase: string,
-  implementation: string,
-  exampleCode: string,
-  antiPatterns: string,
-  relatedFiles: string
-})
-
-// Project nodes
-(:Project {
-  name: string,
-  description: string,
-  repoPath: string,
-  technology: string,
-  framework: string
-})
-
-// Domain Knowledge nodes
-(:Domain:Knowledge {
-  topic: string,
-  category: string, // 'trading-strategies', 'market-mechanics', etc.
-  title: string,
-  description: string,
-  keyConcepts: string, // JSON array
-  examples: string,
-  formulas: string,
-  relatedTopics: string,
-  sources: string
-})
+// Base vertex interface with security context
+interface KnowledgeVertex extends BaseVertex {
+  id: string
+  type: string
+  name: string
+  description: string
+  project: string
+  domain: string
+  visibility: 'private' | 'team' | 'organization' | 'shared'
+  accessLevel: 'read' | 'write' | 'admin'
+  tags: string[]
+  keywords: string[]
+  status: 'draft' | 'active' | 'deprecated' | 'experimental'
+  confidence: number
+  version: string
+  schemaVersion: string
+  
+  // Security context
+  tenantId: string
+  userId: string
+  teamId?: string
+  sharedWith: string[]
+  
+  // Metadata
+  createdAt: number
+  updatedAt: number
+  createdBy: string
+  updatedBy: string
+}
 ```
 
-#### Relationship Types
-```cypher
-// Function relationships
-(:Function)-[:CALLS]->(:Function)
-(:Function)-[:USES]->(:Model)
-(:Function)-[:BELONGS_TO]->(:Project)
-(:Function)-[:IMPLEMENTS]->(:Pattern)
-(:Function)-[:DEPENDS_ON]->(:Function)
+#### Core Edge Types
+```typescript
+// BELONGS_TO edges (implemented)
+interface BelongsToEdge extends KnowledgeEdge {
+  type: "BELONGS_TO"
+  role: string
+  responsibilities: string[]
+}
+
+// Base edge interface with security context
+interface KnowledgeEdge extends BaseEdge {
+  id: string
+  type: string
+  visibility: 'private' | 'team' | 'organization' | 'shared'
+  
+  // Security context
+  tenantId: string
+  userId: string
+  
+  // Metadata
+  createdAt: number
+  updatedAt: number
+  createdBy: string
+  updatedBy: string
+}
+```
+
+#### Edge Types (Gremlin Traversals)
+```gremlin
+// Function relationships (implemented: BELONGS_TO)
+g.V().hasLabel('Function').outE('CALLS').inV().hasLabel('Function')
+g.V().hasLabel('Function').outE('USES').inV().hasLabel('Model')  
+g.V().hasLabel('Function').outE('BELONGS_TO').inV().hasLabel('System')
+g.V().hasLabel('Function').outE('IMPLEMENTS').inV().hasLabel('Pattern')
+g.V().hasLabel('Function').outE('DEPENDS_ON').inV().hasLabel('Function')
 
 // Model relationships
-(:Model)-[:EXTENDS]->(:Model)
-(:Model)-[:CONTAINS]->(:Model)
-(:Model)-[:BELONGS_TO]->(:Project)
-(:Model)-[:REFERENCES]->(:Model)
+g.V().hasLabel('Model').outE('EXTENDS').inV().hasLabel('Model')
+g.V().hasLabel('Model').outE('BELONGS_TO').inV().hasLabel('System')
+g.V().hasLabel('Model').outE('REFERENCES').inV().hasLabel('Model')
 
-// Pattern relationships
-(:Pattern)-[:APPLIES_TO]->(:Project)
-(:Pattern)-[:RELATED_TO]->(:Pattern)
-(:CodePattern)-[:IMPLEMENTS]->(:Architecture)
+// System relationships  
+g.V().hasLabel('System').outE('CONTAINS').inV().hasLabel('Function')
+g.V().hasLabel('System').outE('USES').inV().hasLabel('Model')
 
-// Project relationships  
-(:Project)-[:USES_PATTERN]->(:Pattern)
-(:Project)-[:DEPENDS_ON]->(:Project)
-
-// Domain relationships
-(:Domain)-[:RELATES_TO]->(:Domain)
-(:Domain)-[:APPLIES_TO]->(:Project)
+// Additional relationships (to implement)
+g.V().hasLabel('Project').outE('USES_PATTERN').inV().hasLabel('Pattern')
+g.V().hasLabel('Project').outE('DEPENDS_ON').inV().hasLabel('Project')
 ```
 
 ### Technology Stack
@@ -162,7 +185,7 @@
 #### Backend
 - **Runtime**: Node.js 20+ with TypeScript (ESM modules)
 - **Framework**: React Router v7 (full-stack)
-- **Database**: Neo4j JavaScript Driver v5.2+
+- **Database**: AWS Neptune with Gremlin JavaScript Driver v3.7.3
 - **API**: REST endpoints + GraphQL (Apollo Server)
 - **MCP**: TypeScript SDK for Claude integration
 - **Testing**: Jest/Vitest with type checking
@@ -218,19 +241,20 @@ KnowledgeServer/
 │   │   ├── projects.tsx           # Project management
 │   │   ├── api.knowledge.ts       # Knowledge API routes
 │   │   ├── api.search.ts          # Search API routes
-│   │   └── api.graph.ts           # Graph query API routes
+│   │   ├── api.graph.ts           # Graph query API routes
+│   │   └── api.test.neptune.ts    # Neptune testing endpoint (implemented)
 │   │
 │   ├── models/                    # TypeScript interfaces
-│   │   ├── Knowledge.ts           # Knowledge graph types
+│   │   ├── neptune/               # Neptune graph types (implemented)
+│   │   │   └── types.ts           # Vertex and edge interfaces with security
+│   │   ├── Knowledge.ts           # Knowledge graph types  
 │   │   ├── Project.ts             # Project-related types
-│   │   ├── Neo4j.ts               # Neo4j driver types
 │   │   └── MCP.ts                 # MCP server types
 │   │
 │   ├── services/                  # Business logic services
-│   │   ├── neo4j/                 # Neo4j connection and queries
-│   │   │   ├── driver.ts          # Database connection
-│   │   │   ├── repositories/      # Data access layer
-│   │   │   └── queries/           # Cypher query definitions
+│   │   ├── neptune/               # Neptune connection and operations (implemented)
+│   │   │   ├── connection.ts      # Database connection with GraphSON v2
+│   │   │   └── repository.ts      # Repository pattern with security filtering
 │   │   ├── knowledge/             # Knowledge management logic
 │   │   └── search/                # Search and discovery logic
 │   │
@@ -248,16 +272,14 @@ KnowledgeServer/
 │   │   └── analysis.ts            # Analysis and insights tools
 │   └── types/                     # MCP-specific types
 │
-├── infrastructure/                # AWS CDK infrastructure code
+├── infrastructure/                # AWS CDK infrastructure code (implemented)
 │   ├── bin/                       # CDK app entry point
 │   ├── lib/                       # CDK stack definitions
-│   │   ├── app-stack.ts           # Main application stack
-│   │   ├── database-stack.ts      # Neo4j database stack
-│   │   └── monitoring-stack.ts    # CloudWatch monitoring
+│   │   └── app-stack.ts           # Application + Neptune stack (implemented)
 │   └── lambda/                    # Lambda function code (if needed)
 │
 ├── scripts/                       # Utility and migration scripts
-│   ├── migrate-rmwm-context.ts    # RMWM SQLite to Neo4j migration
+│   ├── migrate-rmwm-context.ts    # RMWM SQLite to Neptune migration
 │   ├── seed-database.ts           # Initial data seeding
 │   ├── backup-database.ts         # Database backup utilities
 │   └── analyze-codebase.ts        # Code analysis and import tools
@@ -356,42 +378,46 @@ analyze_gaps(project: string, comparisonProjects?: string[])
 
 ## Implementation Phases
 
-### Phase 1: Foundation Setup (Week 1)
+### Phase 1: Foundation Setup ✅ COMPLETED
 **Objectives**: Establish development environment and basic project structure
 
 **Tasks**:
-- [ ] Initialize React Router v7 project with TypeScript
-- [ ] Configure modern tooling (ESLint flat config, Prettier, Husky)
-- [ ] Set up TailwindCSS matching RMWM styling
-- [ ] Create basic directory structure
-- [ ] Establish Neo4j connection with TypeScript driver
-- [ ] Implement health checks and basic logging
-- [ ] Create CLAUDE.md following RMWM development patterns
+- [x] Initialize React Router v7 project with TypeScript
+- [x] Configure modern tooling (ESLint flat config, Prettier, Husky)
+- [x] Set up TailwindCSS matching RMWM styling
+- [x] Create basic directory structure
+- [x] Establish Neptune connection with Gremlin driver and GraphSON v2
+- [x] Implement repository pattern with multi-tenant security
+- [x] Complete CRUD operations (vertices and edges)
+- [x] Create CLAUDE.md following RMWM development patterns
+- [x] AWS CDK infrastructure with Neptune cluster
+- [x] Health checks and comprehensive error handling
 
-**Deliverables**:
+**Deliverables**: ✅ COMPLETED
 - Working React Router v7 app with SSR
-- Neo4j connection established  
-- Development workflow configured
-- Basic UI layout implemented
+- Neptune connection established with production-ready repository pattern
+- Development workflow configured with TypeScript and linting
+- AWS infrastructure deployed with Neptune cluster
+- Complete testing endpoint for Neptune operations
 
-### Phase 2: Neo4j Data Layer (Week 2)
-**Objectives**: Implement graph database foundation with type safety
+### Phase 2: Neptune Data Layer Enhancement (Week 2)
+**Objectives**: Expand Neptune graph schema and implement data migration
 
 **Tasks**:
-- [ ] Design and implement Neo4j schema with constraints
-- [ ] Create TypeScript interfaces for all node types
-- [ ] Build repository pattern for data access
-- [ ] Implement CRUD operations for knowledge nodes
-- [ ] Create relationship management functions
-- [ ] Add data validation and error handling
-- [ ] Build migration scripts from RMWM SQLite context database
-- [ ] Implement comprehensive unit tests for data layer
+- [ ] Design comprehensive Neptune schema with proper indexes
+- [ ] Implement Model, Pattern, and Project vertex types
+- [ ] Add relationship types (CALLS, USES, IMPLEMENTS, EXTENDS)
+- [ ] Build advanced graph traversal operations
+- [ ] Create RMWM SQLite to Neptune migration scripts
+- [ ] Add graph validation and constraint logic
+- [ ] Implement comprehensive unit tests for all vertex/edge types
+- [ ] Add bulk import/export capabilities
 
 **Deliverables**:
-- Complete Neo4j schema with indexes
-- Type-safe repository layer
-- RMWM context data migrated to Neo4j
-- Comprehensive test coverage
+- Complete Neptune schema with all vertex/edge types
+- Advanced traversal operations for knowledge discovery
+- RMWM context data successfully migrated to Neptune
+- Comprehensive test coverage for all operations
 
 ### Phase 3: API Development (Week 2-3)
 **Objectives**: Create robust API layer for knowledge management

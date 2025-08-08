@@ -214,7 +214,7 @@ export interface DecisionVertex extends BaseVertex {
 
 export interface PatternVertex extends BaseVertex {
   type: 'Pattern';
-  patternType: 'design' | 'architectural';
+  patternType: 'design' | 'architectural' | 'code';
   problem: string;
   solution: string;
   examples: string[];
