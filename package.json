@@ -14,6 +14,7 @@
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "tsx scripts/e2e-test.ts",
     "install-git-hooks": "husky",
     "deploy:staging": "NODE_ENV=staging AWS_PROFILE=knowledge-server npx aws-cdk deploy --context environment=staging",
     "deploy:prod": "NODE_ENV=production AWS_PROFILE=knowledge-server npx aws-cdk deploy --context environment=prod",

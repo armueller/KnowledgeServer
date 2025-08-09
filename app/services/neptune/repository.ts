@@ -138,15 +138,16 @@ export class VertexRepository extends BaseNeptuneRepository {
     for (const [key, value] of Object.entries(properties)) {
       if (value !== undefined && value !== null) {
         if (Array.isArray(value)) {
-          // Handle array properties
+          // Handle array properties with set cardinality
           for (const item of value) {
             traversal = traversal.property(cardinality.set, key, item);
           }
         } else if (typeof value === 'object') {
-          // Store objects as JSON strings
-          traversal = traversal.property(key, JSON.stringify(value));
+          // Store objects as JSON strings with single cardinality
+          traversal = traversal.property(cardinality.single, key, JSON.stringify(value));
         } else {
-          traversal = traversal.property(key, value);
+          // Use single cardinality for scalar values
+          traversal = traversal.property(cardinality.single, key, value);
         }
       }
     }
@@ -274,8 +275,8 @@ export class VertexRepository extends BaseNeptuneRepository {
     // Update properties
     const now = Date.now();
     traversal = traversal
-      .property('updatedAt', now)
-      .property('updatedBy', this.securityContext.userId);
+      .property(cardinality.single, 'updatedAt', now)
+      .property(cardinality.single, 'updatedBy', this.securityContext.userId);
     
     for (const [key, value] of Object.entries(updates)) {
       if (key !== 'id' && key !== 'type' && key !== 'tenantId' && value !== undefined) {
@@ -288,9 +289,10 @@ export class VertexRepository extends BaseNeptuneRepository {
             traversal = traversal.property(cardinality.set, key, item);
           }
         } else if (typeof value === 'object') {
-          traversal = traversal.property(key, JSON.stringify(value));
+          traversal = traversal.property(cardinality.single, key, JSON.stringify(value));
         } else {
-          traversal = traversal.property(key, value);
+          // Use single cardinality to replace the value, not append to it
+          traversal = traversal.property(cardinality.single, key, value);
         }
       }
     }

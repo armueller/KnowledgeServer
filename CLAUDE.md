@@ -12,6 +12,23 @@ KnowledgeServer is a Neo4j-based knowledge management system built with React Ro
 
 These procedures exist to maintain code quality, provide context between sessions, and ensure sustainable development. **FAILURE TO FOLLOW THESE PROCEDURES VIOLATES THE PROJECT'S DEVELOPMENT STANDARDS.**
 
+### 🚨 CRITICAL: NEVER GUESS - ALWAYS VERIFY 🚨
+
+**DO NOT GUESS. NEVER GUESS.**
+
+When you don't know something (types, properties, function signatures, etc.):
+1. **LOOK IT UP** - Check the actual type definitions, interfaces, and implementations
+2. **READ THE CODE** - Don't assume what properties exist, verify them
+3. **ASK IF UNSURE** - If you can't find the information, ASK THE USER
+
+**Examples of UNACCEPTABLE guessing:**
+❌ Assuming properties exist on types without checking
+❌ Guessing function signatures or parameters
+❌ Making up field names or types
+❌ Assuming API contracts without verification
+
+**This is EXTREMELY important and YOU MUST ALWAYS FOLLOW IT.**
+
 **📊 REFERENCE: See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for comprehensive project architecture, technology decisions, and detailed implementation phases.**
 
 ### 🚨 SAFETY RULE: READ BEFORE MODIFY 🚨
