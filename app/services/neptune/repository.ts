@@ -584,4 +584,313 @@ export class KnowledgeGraphRepository {
       edges: path.objects.filter((_: any, i: number) => i % 2 === 1),
     }));
   }
+
+  /**
+   * Analyze dependencies in a specific direction
+   */
+  async analyzeDependencies(
+    startVertexId: string,
+    direction: 'in' | 'out' | 'both',
+    edgeTypes: string[],
+    maxDepth: number,
+    includeIndirect: boolean
+  ): Promise<{ nodes: any[]; directCount: number }> {
+    const g = getReadGraphTraversalSource();
+    const nodes: any[] = [];
+    const visited = new Set<string>();
+    const queue: Array<{ id: string; level: number; path: string[] }> = [
+      { id: startVertexId, level: 0, path: [] }
+    ];
+    let directCount = 0;
+
+    while (queue.length > 0) {
+      const { id, level, path } = queue.shift()!;
+      
+      if (visited.has(id) || level > maxDepth) {
+        continue;
+      }
+      visited.add(id);
+
+      if (level > 0) {
+        // Get vertex details with security filter
+        let vertexTraversal = g.V(id);
+        vertexTraversal = this.vertices['applySecurityFilter'](vertexTraversal);
+        const vertex = await vertexTraversal.elementMap().next();
+
+        if (vertex.value) {
+          // Get direct dependencies
+          let depTraversal = g.V(id);
+          if (direction === 'out' || direction === 'both') {
+            depTraversal = depTraversal.out(...edgeTypes);
+          } else if (direction === 'in') {
+            depTraversal = depTraversal.in_(...edgeTypes);
+          }
+          depTraversal = this.vertices['applySecurityFilter'](depTraversal);
+          const directDeps = await depTraversal.id().toList();
+
+          nodes.push({
+            id: vertex.value.id,
+            name: vertex.value.name || 'Unknown',
+            type: vertex.value.label || vertex.value.type || 'Unknown',
+            level,
+            directDependencies: directDeps,
+            path: [...path, id],
+          });
+
+          if (level === 1) {
+            directCount++;
+          }
+        }
+      }
+
+      if (includeIndirect || level === 0) {
+        // Get connected vertices
+        let connectedTraversal = g.V(id);
+        if (direction === 'out') {
+          connectedTraversal = connectedTraversal.out(...edgeTypes);
+        } else if (direction === 'in') {
+          connectedTraversal = connectedTraversal.in_(...edgeTypes);
+        } else {
+          connectedTraversal = connectedTraversal.both(...edgeTypes);
+        }
+        connectedTraversal = this.vertices['applySecurityFilter'](connectedTraversal);
+        const connected = await connectedTraversal.id().toList();
+
+        for (const connectedId of connected) {
+          if (!visited.has(connectedId as string)) {
+            queue.push({ 
+              id: connectedId as string, 
+              level: level + 1,
+              path: level === 0 ? [startVertexId] : [...path, id]
+            });
+          }
+        }
+      }
+    }
+
+    return { nodes, directCount };
+  }
+
+  /**
+   * Detect circular dependencies
+   */
+  async detectCircularDependencies(
+    startVertexId: string,
+    edgeTypes: string[],
+    maxDepth: number
+  ): Promise<string[][]> {
+    const g = getReadGraphTraversalSource();
+    const circles: string[][] = [];
+    
+    try {
+      // Find paths that lead back to the starting vertex
+      let traversal = g.V(startVertexId).as('start');
+      
+      // Build repeat traversal
+      traversal = traversal.repeat(
+        statics.out(...edgeTypes).simplePath()
+      ).times(maxDepth);
+      
+      // Check if any outgoing edge leads back to start
+      traversal = traversal.where(
+        statics.out(...edgeTypes).as('start')
+      );
+      
+      // Get the paths
+      const paths = await traversal.path().by('id').limit(10).toList();
+      
+      for (const path of paths) {
+        if (path && (path as any).objects) {
+          circles.push((path as any).objects as string[]);
+        }
+      }
+    } catch (error) {
+      console.warn("Circular dependency detection warning:", error);
+    }
+
+    return circles;
+  }
+
+  /**
+   * Analyze impact of changes to a vertex
+   */
+  async analyzeImpact(
+    vertexId: string,
+    changeType: 'modify' | 'delete' | 'deprecate',
+    maxDepth: number
+  ): Promise<any> {
+    const g = getReadGraphTraversalSource();
+    
+    // Get all vertices that depend on this one
+    const impactedVertices = await this.analyzeDependencies(
+      vertexId,
+      'in',
+      ['DEPENDS_ON', 'CALLS', 'USES', 'IMPLEMENTS', 'EXTENDS', 'REFERENCES'],
+      maxDepth,
+      true
+    );
+
+    // Categorize impact by severity
+    const impact = {
+      critical: [] as any[],
+      high: [] as any[],
+      medium: [] as any[],
+      low: [] as any[],
+    };
+
+    for (const vertex of impactedVertices.nodes) {
+      const severity = this.calculateImpactSeverity(vertex, changeType);
+      impact[severity].push({
+        ...vertex,
+        impactType: this.determineImpactType(vertex.type, changeType),
+        severity,
+      });
+    }
+
+    return impact;
+  }
+
+  /**
+   * Calculate impact severity based on vertex properties and change type
+   */
+  private calculateImpactSeverity(
+    vertex: any,
+    changeType: string
+  ): 'critical' | 'high' | 'medium' | 'low' {
+    // Direct dependencies are more critical
+    if (vertex.level === 1) {
+      if (changeType === 'delete') return 'critical';
+      if (changeType === 'deprecate') return 'high';
+      return 'medium';
+    }
+    
+    // Indirect dependencies
+    if (vertex.level === 2) {
+      if (changeType === 'delete') return 'high';
+      return 'medium';
+    }
+    
+    // Far dependencies
+    return 'low';
+  }
+
+  /**
+   * Determine the type of impact based on vertex type
+   */
+  private determineImpactType(vertexType: string, changeType: string): string {
+    if (changeType === 'delete') {
+      return 'Breaking change - requires refactoring';
+    }
+    if (changeType === 'deprecate') {
+      return 'Deprecated - plan migration';
+    }
+    if (vertexType === 'Function' || vertexType === 'Endpoint') {
+      return 'API change - review implementation';
+    }
+    if (vertexType === 'Model' || vertexType === 'Component') {
+      return 'Structure change - validate compatibility';
+    }
+    return 'Review for compatibility';
+  }
+
+  /**
+   * Detect patterns in the graph
+   */
+  async detectPatterns(
+    domain?: string,
+    project?: string,
+    minOccurrences: number = 2
+  ): Promise<any[]> {
+    const g = getReadGraphTraversalSource();
+    const patterns: any[] = [];
+    
+    // Build base query with security
+    let baseQuery = g.V();
+    baseQuery = this.vertices['applySecurityFilter'](baseQuery);
+    
+    if (domain) {
+      baseQuery = baseQuery.has('domain', domain);
+    }
+    if (project) {
+      baseQuery = baseQuery.has('project', project);
+    }
+    
+    // Find common subgraph patterns
+    // This is a simplified version - real pattern detection would be more complex
+    
+    // Pattern 1: Functions that call multiple other functions
+    const hubFunctions = await baseQuery
+      .hasLabel('Function')
+      .where(statics.out('CALLS').count().is(P.gte(3)))
+      .elementMap()
+      .toList();
+    
+    if (hubFunctions.length >= minOccurrences) {
+      patterns.push({
+        type: 'Hub Function',
+        description: 'Functions that orchestrate multiple other functions',
+        occurrences: hubFunctions,
+        count: hubFunctions.length,
+      });
+    }
+    
+    // Pattern 2: Layered architecture (functions in one layer only call next layer)
+    const layeredCalls = await baseQuery
+      .hasLabel('Function')
+      .has('layer')
+      .group()
+      .by('layer')
+      .by(statics.out('CALLS').values('layer').dedup().fold())
+      .toList();
+    
+    // Pattern 3: Circular dependencies
+    const circularPatterns = await this.findCircularPatterns(domain, project);
+    if (circularPatterns.length >= minOccurrences) {
+      patterns.push({
+        type: 'Circular Dependencies',
+        description: 'Components with circular dependency chains',
+        occurrences: circularPatterns,
+        count: circularPatterns.length,
+      });
+    }
+    
+    return patterns;
+  }
+
+  /**
+   * Find circular dependency patterns
+   */
+  private async findCircularPatterns(
+    domain?: string,
+    project?: string
+  ): Promise<any[]> {
+    const g = getReadGraphTraversalSource();
+    const patterns: any[] = [];
+    
+    try {
+      let baseQuery = g.V();
+      baseQuery = this.vertices['applySecurityFilter'](baseQuery);
+      
+      if (domain) baseQuery = baseQuery.has('domain', domain);
+      if (project) baseQuery = baseQuery.has('project', project);
+      
+      // Find vertices involved in cycles
+      const cycles = await baseQuery
+        .as('start')
+        .repeat(statics.out('DEPENDS_ON', 'CALLS', 'USES').simplePath())
+        .times(5)
+        .where(statics.out('DEPENDS_ON', 'CALLS', 'USES').as('start'))
+        .select('start')
+        .dedup()
+        .elementMap()
+        .limit(20)
+        .toList();
+      
+      patterns.push(...cycles);
+    } catch (error) {
+      console.warn("Pattern detection warning:", error);
+    }
+    
+    return patterns;
+  }
 }

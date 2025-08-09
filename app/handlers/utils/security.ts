@@ -45,3 +45,48 @@ export function parseRelationshipParams(request: Request) {
     edgeTypes: url.searchParams.get("edgeTypes")?.split(",").map(t => t.trim()),
   };
 }
+
+/**
+ * Parse dependency analysis parameters
+ */
+export function parseDependencyParams(request: Request) {
+  const url = new URL(request.url);
+  
+  return {
+    vertexId: url.searchParams.get("vertexId"),
+    direction: url.searchParams.get("direction") as "forward" | "reverse" | "both" || "both",
+    maxDepth: parseInt(url.searchParams.get("maxDepth") || "5"),
+    includeIndirect: url.searchParams.get("includeIndirect") !== "false",
+    edgeTypes: url.searchParams.get("edgeTypes")?.split(",").map(t => t.trim()),
+  };
+}
+
+/**
+ * Parse impact analysis parameters
+ */
+export function parseImpactParams(request: Request) {
+  const url = new URL(request.url);
+  
+  return {
+    vertexId: url.searchParams.get("vertexId"),
+    changeType: url.searchParams.get("changeType") as "modify" | "delete" | "deprecate" || "modify",
+    maxDepth: parseInt(url.searchParams.get("maxDepth") || "3"),
+    includeSeverity: url.searchParams.get("includeSeverity") !== "false",
+  };
+}
+
+/**
+ * Parse pattern detection parameters
+ */
+export function parsePatternParams(request: Request) {
+  const url = new URL(request.url);
+  
+  return {
+    domain: url.searchParams.get("domain"),
+    project: url.searchParams.get("project"),
+    patternType: url.searchParams.get("patternType"),
+    minOccurrences: parseInt(url.searchParams.get("minOccurrences") || "2"),
+    similarity: parseFloat(url.searchParams.get("similarity") || "0.8"),
+    limit: parseInt(url.searchParams.get("limit") || "20"),
+  };
+}

@@ -86,6 +86,7 @@ class E2ETestRunner {
       await this.testKnowledgeAPI();
       await this.testRelationshipsAPI();
       await this.testSearchAPI();
+      await this.testAnalysisAPI();
 
       // Report results
       this.testReport.endTime = Date.now();
@@ -588,6 +589,101 @@ class E2ETestRunner {
         this.assertProperty(data, 'results', 'array');
       });
     }
+  }
+
+  /**
+   * Test Analysis API
+   */
+  private async testAnalysisAPI(): Promise<void> {
+    console.log(`\n${colors.cyan}📋 Testing Analysis API${colors.reset}`);
+
+    // Need at least 1 vertex for analysis
+    if (this.createdVertexIds.length === 0) {
+      console.log(`${colors.yellow}⚠️  Skipping analysis tests (need at least 1 vertex)${colors.reset}`);
+      return;
+    }
+
+    const vertexId = this.createdVertexIds[0];
+
+    // Dependency analysis
+    await this.runTest('Analysis - Dependency Analysis', async () => {
+      const response = await fetch(
+        `${API_BASE_URL}/analysis?type=dependency&vertexId=${vertexId}&direction=both&maxDepth=3`,
+        {
+          method: 'GET',
+          headers: { 'Cookie': this.sessionCookie },
+        }
+      );
+      
+      this.assertStatus(response, 200);
+      const data = await response.json();
+      this.assertProperty(data, 'success', 'boolean');
+      this.assertProperty(data, 'analysis', 'string');
+      this.assert(data.analysis === 'dependency', 'Should be dependency analysis');
+      this.assertProperty(data, 'result', 'object');
+    });
+
+    // Impact analysis
+    await this.runTest('Analysis - Impact Analysis', async () => {
+      const response = await fetch(
+        `${API_BASE_URL}/analysis?type=impact&vertexId=${vertexId}&changeType=modify&maxDepth=2`,
+        {
+          method: 'GET',
+          headers: { 'Cookie': this.sessionCookie },
+        }
+      );
+      
+      this.assertStatus(response, 200);
+      const data = await response.json();
+      this.assertProperty(data, 'success', 'boolean');
+      this.assertProperty(data, 'analysis', 'string');
+      this.assert(data.analysis === 'impact', 'Should be impact analysis');
+      this.assertProperty(data, 'result', 'object');
+    });
+
+    // Pattern detection
+    await this.runTest('Analysis - Pattern Detection', async () => {
+      const response = await fetch(
+        `${API_BASE_URL}/analysis?type=pattern&domain=testing&minOccurrences=1`,
+        {
+          method: 'GET',
+          headers: { 'Cookie': this.sessionCookie },
+        }
+      );
+      
+      this.assertStatus(response, 200);
+      const data = await response.json();
+      this.assertProperty(data, 'success', 'boolean');
+      this.assertProperty(data, 'analysis', 'string');
+      this.assert(data.analysis === 'pattern_detection', 'Should be pattern detection');
+      this.assertProperty(data, 'result', 'object');
+    });
+
+    // Test with invalid analysis type
+    await this.runTest('Analysis - Invalid Type', async () => {
+      const response = await fetch(
+        `${API_BASE_URL}/analysis?type=invalid`,
+        {
+          method: 'GET',
+          headers: { 'Cookie': this.sessionCookie },
+        }
+      );
+      
+      this.assertStatus(response, 400);
+    });
+
+    // Test dependency analysis without vertexId
+    await this.runTest('Analysis - Missing Required Params', async () => {
+      const response = await fetch(
+        `${API_BASE_URL}/analysis?type=dependency`,
+        {
+          method: 'GET',
+          headers: { 'Cookie': this.sessionCookie },
+        }
+      );
+      
+      this.assertStatus(response, 400);
+    });
   }
 
   /**
