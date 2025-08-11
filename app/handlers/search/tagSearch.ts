@@ -10,7 +10,7 @@ export async function tagSearch(
   request: Request,
   context: { userId: string }
 ): Promise<Response> {
-  const { tag, limit, offset, orderBy, orderDirection } = parseSearchParams(request);
+  const { tag, project, limit, offset, orderBy, orderDirection } = parseSearchParams(request);
   
   if (!tag) {
     return Response.json(
@@ -24,9 +24,15 @@ export async function tagSearch(
     const securityContext = await buildSecurityContext(context.userId);
     const repository = new KnowledgeGraphRepository(securityContext);
     
+    // Build filters with optional project filtering
+    const vertexFilters: any = { tags: [tag] };
+    if (project) {
+      vertexFilters.project = project;
+    }
+    
     const results = await repository.vertices.query({
       securityContext,
-      vertexFilters: { tags: [tag] },
+      vertexFilters,
       limit,
       offset,
       orderBy,
@@ -36,7 +42,7 @@ export async function tagSearch(
     return Response.json({
       success: true,
       type: "tag_search",
-      query: { tag, limit, offset },
+      query: { tag, project, limit, offset },
       results: results.data,
       count: results.count,
       hasMore: results.hasMore,

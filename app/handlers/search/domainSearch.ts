@@ -10,7 +10,7 @@ export async function domainSearch(
   request: Request,
   context: { userId: string }
 ): Promise<Response> {
-  const { domain, limit, offset, orderBy, orderDirection } = parseSearchParams(request);
+  const { domain, project, limit, offset, orderBy, orderDirection } = parseSearchParams(request);
   
   if (!domain) {
     return Response.json(
@@ -24,9 +24,15 @@ export async function domainSearch(
     const securityContext = await buildSecurityContext(context.userId);
     const repository = new KnowledgeGraphRepository(securityContext);
     
+    // Build filters with optional project filtering
+    const vertexFilters: any = { domain };
+    if (project) {
+      vertexFilters.project = project;
+    }
+    
     const results = await repository.vertices.query({
       securityContext,
-      vertexFilters: { domain },
+      vertexFilters,
       limit,
       offset,
       orderBy,
@@ -36,7 +42,7 @@ export async function domainSearch(
     return Response.json({
       success: true,
       type: "domain_search",
-      query: { domain, limit, offset },
+      query: { domain, project, limit, offset },
       results: results.data,
       count: results.count,
       hasMore: results.hasMore,

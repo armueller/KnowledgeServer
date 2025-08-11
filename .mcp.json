@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "knowledge-server": {
+      "command": "node",
+      "args": ["/Users/austinmueller/Git/KnowledgeServer/mcp-server/dist/index.js"],
+      "env": {
+        "KNOWLEDGE_API_URL": "https://knowledge-server-dev.tabus10.com/api",
+        "KNOWLEDGE_USERNAME": "austin@tabus10.com",
+        "KNOWLEDGE_PASSWORD": "bh?UzE9BakV-mu8",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}
