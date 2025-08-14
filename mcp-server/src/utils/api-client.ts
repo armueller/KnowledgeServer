@@ -163,6 +163,8 @@ export class KnowledgeAPIClient {
     type?: string;
     domain?: string;
     project?: string;
+    name?: string;
+    nameMatch?: 'exact' | 'partial';
     limit?: number;
     offset?: number;
   }) {

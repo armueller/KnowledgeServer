@@ -190,7 +190,10 @@ export class VertexRepository extends BaseNeptuneRepository {
     if (query.vertexFilters) {
       for (const [key, value] of Object.entries(query.vertexFilters)) {
         if (key !== 'type' && value !== undefined) {
-          if (Array.isArray(value)) {
+          if (key === 'namePattern') {
+            // Handle partial name matching using TextP.containing
+            traversal = traversal.has('name', TextP.containing(value));
+          } else if (Array.isArray(value)) {
             traversal = traversal.has(key, P.within(...value));
           } else {
             traversal = traversal.has(key, value);
@@ -211,7 +214,10 @@ export class VertexRepository extends BaseNeptuneRepository {
     if (query.vertexFilters) {
       for (const [key, value] of Object.entries(query.vertexFilters)) {
         if (key !== 'type' && value !== undefined) {
-          if (Array.isArray(value)) {
+          if (key === 'namePattern') {
+            // Handle partial name matching using TextP.containing
+            countTraversal = countTraversal.has('name', TextP.containing(value));
+          } else if (Array.isArray(value)) {
             countTraversal = countTraversal.has(key, P.within(...value));
           } else {
             countTraversal = countTraversal.has(key, value);

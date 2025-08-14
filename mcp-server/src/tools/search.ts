@@ -1,9 +1,11 @@
 import { 
+  SearchByNameSchema,
   SearchByDomainSchema,
   SearchByTagSchema,
   SearchByProjectSchema,
   GraphTraversalSchema,
   ListVerticesSchema,
+  type SearchByName,
   type SearchByDomain,
   type SearchByTag,
   type SearchByProject,
@@ -13,6 +15,43 @@ import {
 import { apiClient } from '../utils/api-client.js';
 import { cacheManager } from '../utils/cache.js';
 import { logger } from '../utils/logger.js';
+
+/**
+ * Search vertices by name (exact or partial match)
+ */
+export async function searchByName(params: SearchByName) {
+  const cacheKey = cacheManager.generateKey('searchByName', params);
+  const cached = cacheManager.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    // Use list vertices with server-side name filtering
+    const result = await apiClient.listVertices({
+      type: params.type,
+      project: params.project,
+      name: params.name,
+      nameMatch: params.exact ? 'exact' : 'partial',
+      limit: params.limit,
+      offset: params.offset,
+    });
+
+    const formatted = {
+      searchTerm: params.name,
+      type: params.type,
+      project: params.project,
+      exact: params.exact,
+      results: result.data || [],
+      count: result.count || result.data?.length || 0,
+      hasMore: result.hasMore || false,
+    };
+
+    cacheManager.set(cacheKey, formatted);
+    return formatted;
+  } catch (error) {
+    logger.error('searchByName failed:', error);
+    throw new Error(`Failed to search by name: ${error}`);
+  }
+}
 
 /**
  * Search vertices by domain
@@ -182,6 +221,11 @@ export async function listVertices(params: ListVertices) {
 
 // Export tool definitions for MCP server registration
 export const searchTools = {
+  search_by_name: {
+    description: 'Search knowledge vertices by name (exact or partial match) with optional type and project filters',
+    inputSchema: SearchByNameSchema,
+    handler: searchByName,
+  },
   search_by_domain: {
     description: 'Search knowledge vertices by domain, optionally filtered by project',
     inputSchema: SearchByDomainSchema,

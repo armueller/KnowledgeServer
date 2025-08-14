@@ -18,9 +18,9 @@ import { searchTools } from './tools/search.js';
 import { detailTools } from './tools/details.js';
 import { analysisTools } from './tools/analysis.js';
 import { managementTools } from './tools/management.js';
+import { pathfindingTools } from './tools/pathfinding.js';
 
 // TODO: Import these as they are implemented
-// import { pathfindingTools } from './tools/pathfinding.js';
 // import { bulkTools } from './tools/bulk.js';
 // import { projectTools } from './tools/project.js';
 
@@ -37,8 +37,8 @@ const allTools: Record<string, ToolDefinition> = {
   ...detailTools,
   ...analysisTools,
   ...managementTools,
+  ...pathfindingTools,
   // TODO: Add these as they are implemented
-  // ...pathfindingTools,
   // ...bulkTools,
   // ...projectTools,
 };

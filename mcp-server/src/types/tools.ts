@@ -3,6 +3,15 @@ import { z } from 'zod';
 // ============== Search & Discovery Tools ==============
 // Note: Search API is type-specific, not general text search
 
+export const SearchByNameSchema = z.object({
+  name: z.string().describe('Name or partial name to search for'),
+  type: z.string().optional().describe('Optional vertex type filter (Function, Model, etc.)'),
+  project: z.string().optional().describe('Optional project to filter results'),
+  exact: z.boolean().default(false).describe('Whether to match exact name or use partial matching'),
+  limit: z.number().min(1).max(100).default(50).describe('Maximum results'),
+  offset: z.number().min(0).default(0).describe('Pagination offset'),
+});
+
 export const SearchByDomainSchema = z.object({
   domain: z.string().describe('Domain to search within'),
   project: z.string().optional().describe('Optional project to filter results'),
@@ -194,6 +203,7 @@ export const CreateEdgeSchema = z.object({
 });
 
 // Type exports
+export type SearchByName = z.infer<typeof SearchByNameSchema>;
 export type SearchByDomain = z.infer<typeof SearchByDomainSchema>;
 export type SearchByTag = z.infer<typeof SearchByTagSchema>;
 export type SearchByProject = z.infer<typeof SearchByProjectSchema>;
@@ -214,3 +224,38 @@ export type CreateVertex = z.infer<typeof CreateVertexSchema>;
 export type UpdateVertex = z.infer<typeof UpdateVertexSchema>;
 export type DeleteVertex = z.infer<typeof DeleteVertexSchema>;
 export type CreateEdge = z.infer<typeof CreateEdgeSchema>;
+
+// ============== Path Finding Tools ==============
+
+export const FindConnectionSchema = z.object({
+  fromId: z.string().describe('Starting vertex ID'),
+  toId: z.string().describe('Target vertex ID'),
+  maxDepth: z.number().min(1).max(10).default(6).describe('Maximum path length'),
+  edgeTypes: z.array(z.string()).optional().describe('Allowed edge types in path'),
+  shortestOnly: z.boolean().default(true).describe('Return only shortest path'),
+});
+
+export const TraceExecutionPathSchema = z.object({
+  entryPoint: z.string().describe('Starting function name or ID'),
+  endpoint: z.string().optional().describe('Optional target function'),
+  includeAsync: z.boolean().default(true).describe('Include async calls'),
+  maxDepth: z.number().min(1).max(20).default(10).describe('Maximum traversal depth'),
+});
+
+export const FindCommonDependenciesSchema = z.object({
+  vertexIds: z.array(z.string()).min(2).describe('Vertices to find common dependencies for'),
+  direction: z.enum(['dependencies', 'dependents', 'both']).default('dependencies'),
+  maxDepth: z.number().min(1).max(10).default(3),
+});
+
+export const FindReachableVerticesSchema = z.object({
+  fromId: z.string().describe('Starting vertex ID'),
+  maxDepth: z.number().min(1).max(10).default(3),
+  edgeTypes: z.array(z.string()).optional().describe('Edge types to follow'),
+  includeIndirect: z.boolean().default(true),
+});
+
+export type FindConnection = z.infer<typeof FindConnectionSchema>;
+export type TraceExecutionPath = z.infer<typeof TraceExecutionPathSchema>;
+export type FindCommonDependencies = z.infer<typeof FindCommonDependenciesSchema>;
+export type FindReachableVertices = z.infer<typeof FindReachableVerticesSchema>;

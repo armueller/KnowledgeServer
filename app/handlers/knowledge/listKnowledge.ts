@@ -14,6 +14,8 @@ export async function listKnowledge(
   // Additional params specific to knowledge listing
   const url = new URL(request.url);
   const type = url.searchParams.get("type");
+  const name = url.searchParams.get("name");
+  const nameMatch = url.searchParams.get("nameMatch") || "partial"; // "exact" or "partial"
   
   try {
     const securityContext = await buildSecurityContext(context.userId);
@@ -24,6 +26,14 @@ export async function listKnowledge(
     if (type) filters.type = type;
     if (project) filters.project = project;
     if (domain) filters.domain = domain;
+    if (name) {
+      if (nameMatch === "exact") {
+        filters.name = name;
+      } else {
+        // For partial matching, we'll use a name pattern
+        filters.namePattern = name;
+      }
+    }
     
     const results = await repo.vertices.query({
       securityContext,
