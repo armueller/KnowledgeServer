@@ -15,7 +15,9 @@ export async function listKnowledge(
   const url = new URL(request.url);
   const type = url.searchParams.get("type");
   const name = url.searchParams.get("name");
-  const nameMatch = url.searchParams.get("nameMatch") || "partial"; // "exact" or "partial"
+  const nameMatch = url.searchParams.get("nameMatch") || "partial"; // "exact", "partial", or "regex"
+  const filePath = url.searchParams.get("filePath");
+  const filePathMatch = url.searchParams.get("filePathMatch") || "partial"; // "exact", "partial", or "regex"
   
   try {
     const securityContext = await buildSecurityContext(context.userId);
@@ -29,9 +31,21 @@ export async function listKnowledge(
     if (name) {
       if (nameMatch === "exact") {
         filters.name = name;
+      } else if (nameMatch === "regex") {
+        filters.nameRegex = name;
       } else {
         // For partial matching, we'll use a name pattern
         filters.namePattern = name;
+      }
+    }
+    if (filePath) {
+      if (filePathMatch === "exact") {
+        filters.filePath = filePath;
+      } else if (filePathMatch === "regex") {
+        filters.filePathRegex = filePath;
+      } else {
+        // For partial matching, we'll use a file path pattern
+        filters.filePathPattern = filePath;
       }
     }
     

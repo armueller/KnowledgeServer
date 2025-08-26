@@ -135,7 +135,9 @@ export class KnowledgeAPIClient {
   async searchKnowledge(params: {
     searchType: 'domain' | 'tag' | 'project' | 'traversal' | 'function_dependencies';
     domain?: string;
+    domainMatch?: 'exact' | 'partial' | 'regex';
     tag?: string;
+    tagMatch?: 'exact' | 'partial' | 'regex';
     project?: string;
     startId?: string;  // For traversal
     depth?: number;    // For traversal
@@ -164,7 +166,9 @@ export class KnowledgeAPIClient {
     domain?: string;
     project?: string;
     name?: string;
-    nameMatch?: 'exact' | 'partial';
+    nameMatch?: 'exact' | 'partial' | 'regex';
+    filePath?: string;
+    filePathMatch?: 'exact' | 'partial' | 'regex';
     limit?: number;
     offset?: number;
   }) {

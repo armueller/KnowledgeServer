@@ -12,6 +12,9 @@ export async function tagSearch(
 ): Promise<Response> {
   const { tag, project, limit, offset, orderBy, orderDirection } = parseSearchParams(request);
   
+  const url = new URL(request.url);
+  const tagMatch = url.searchParams.get("tagMatch") || "partial"; // "exact", "partial", or "regex"
+  
   if (!tag) {
     return Response.json(
       { error: "Tag parameter required" },
@@ -25,7 +28,14 @@ export async function tagSearch(
     const repository = new KnowledgeGraphRepository(securityContext);
     
     // Build filters with optional project filtering
-    const vertexFilters: any = { tags: [tag] };
+    const vertexFilters: any = {};
+    if (tagMatch === "exact") {
+      vertexFilters.tags = [tag];
+    } else if (tagMatch === "regex") {
+      vertexFilters.tagRegex = tag;
+    } else {
+      vertexFilters.tagPattern = tag;
+    }
     if (project) {
       vertexFilters.project = project;
     }

@@ -12,6 +12,9 @@ export async function domainSearch(
 ): Promise<Response> {
   const { domain, project, limit, offset, orderBy, orderDirection } = parseSearchParams(request);
   
+  const url = new URL(request.url);
+  const domainMatch = url.searchParams.get("domainMatch") || "partial"; // "exact", "partial", or "regex"
+  
   if (!domain) {
     return Response.json(
       { error: "Domain parameter required" },
@@ -25,7 +28,14 @@ export async function domainSearch(
     const repository = new KnowledgeGraphRepository(securityContext);
     
     // Build filters with optional project filtering
-    const vertexFilters: any = { domain };
+    const vertexFilters: any = {};
+    if (domainMatch === "exact") {
+      vertexFilters.domain = domain;
+    } else if (domainMatch === "regex") {
+      vertexFilters.domainRegex = domain;
+    } else {
+      vertexFilters.domainPattern = domain;
+    }
     if (project) {
       vertexFilters.project = project;
     }

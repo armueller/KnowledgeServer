@@ -193,6 +193,27 @@ export class VertexRepository extends BaseNeptuneRepository {
           if (key === 'namePattern') {
             // Handle partial name matching using TextP.containing
             traversal = traversal.has('name', TextP.containing(value));
+          } else if (key === 'nameRegex') {
+            // Handle regex name matching
+            traversal = traversal.has('name', TextP.regex(value));
+          } else if (key === 'filePathPattern') {
+            // Handle partial file path matching using TextP.containing
+            traversal = traversal.has('filePath', TextP.containing(value));
+          } else if (key === 'filePathRegex') {
+            // Handle regex file path matching
+            traversal = traversal.has('filePath', TextP.regex(value));
+          } else if (key === 'domainPattern') {
+            // Handle partial domain matching using TextP.containing
+            traversal = traversal.has('domain', TextP.containing(value));
+          } else if (key === 'domainRegex') {
+            // Handle regex domain matching
+            traversal = traversal.has('domain', TextP.regex(value));
+          } else if (key === 'tagPattern') {
+            // Handle partial tag matching - check if any tag in the array contains the pattern
+            traversal = traversal.has('tags', TextP.containing(value));
+          } else if (key === 'tagRegex') {
+            // Handle regex tag matching - check if any tag in the array matches the regex
+            traversal = traversal.has('tags', TextP.regex(value));
           } else if (Array.isArray(value)) {
             traversal = traversal.has(key, P.within(...value));
           } else {
@@ -217,6 +238,27 @@ export class VertexRepository extends BaseNeptuneRepository {
           if (key === 'namePattern') {
             // Handle partial name matching using TextP.containing
             countTraversal = countTraversal.has('name', TextP.containing(value));
+          } else if (key === 'nameRegex') {
+            // Handle regex name matching
+            countTraversal = countTraversal.has('name', TextP.regex(value));
+          } else if (key === 'filePathPattern') {
+            // Handle partial file path matching using TextP.containing
+            countTraversal = countTraversal.has('filePath', TextP.containing(value));
+          } else if (key === 'filePathRegex') {
+            // Handle regex file path matching
+            countTraversal = countTraversal.has('filePath', TextP.regex(value));
+          } else if (key === 'domainPattern') {
+            // Handle partial domain matching using TextP.containing
+            countTraversal = countTraversal.has('domain', TextP.containing(value));
+          } else if (key === 'domainRegex') {
+            // Handle regex domain matching
+            countTraversal = countTraversal.has('domain', TextP.regex(value));
+          } else if (key === 'tagPattern') {
+            // Handle partial tag matching - check if any tag in the array contains the pattern
+            countTraversal = countTraversal.has('tags', TextP.containing(value));
+          } else if (key === 'tagRegex') {
+            // Handle regex tag matching - check if any tag in the array matches the regex
+            countTraversal = countTraversal.has('tags', TextP.regex(value));
           } else if (Array.isArray(value)) {
             countTraversal = countTraversal.has(key, P.within(...value));
           } else {

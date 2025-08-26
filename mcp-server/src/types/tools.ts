@@ -4,16 +4,17 @@ import { z } from 'zod';
 // Note: Search API is type-specific, not general text search
 
 export const SearchByNameSchema = z.object({
-  name: z.string().describe('Name or partial name to search for'),
+  name: z.string().describe('Name to search for'),
+  matchType: z.enum(['exact', 'partial', 'regex']).default('partial').describe('How to match the name: exact match, partial (contains), or regex'),
   type: z.string().optional().describe('Optional vertex type filter (Function, Model, etc.)'),
   project: z.string().optional().describe('Optional project to filter results'),
-  exact: z.boolean().default(false).describe('Whether to match exact name or use partial matching'),
   limit: z.number().min(1).max(100).default(50).describe('Maximum results'),
   offset: z.number().min(0).default(0).describe('Pagination offset'),
 });
 
 export const SearchByDomainSchema = z.object({
-  domain: z.string().describe('Domain to search within'),
+  domain: z.string().describe('Domain to search for'),
+  matchType: z.enum(['exact', 'partial', 'regex']).default('partial').describe('How to match the domain: exact match, partial (contains), or regex'),
   project: z.string().optional().describe('Optional project to filter results'),
   limit: z.number().min(1).max(100).default(50).describe('Maximum results'),
   offset: z.number().min(0).default(0).describe('Pagination offset'),
@@ -23,6 +24,7 @@ export const SearchByDomainSchema = z.object({
 
 export const SearchByTagSchema = z.object({
   tag: z.string().describe('Tag to search for'),
+  matchType: z.enum(['exact', 'partial', 'regex']).default('partial').describe('How to match the tag: exact match, partial (contains), or regex'),
   project: z.string().optional().describe('Optional project to filter results'),
   limit: z.number().min(1).max(100).default(50).describe('Maximum results'),
   offset: z.number().min(0).default(0).describe('Pagination offset'),
@@ -36,6 +38,15 @@ export const SearchByProjectSchema = z.object({
   offset: z.number().min(0).default(0).describe('Pagination offset'),
   orderBy: z.string().default('name').describe('Field to order by'),
   orderDirection: z.enum(['ASC', 'DESC']).default('ASC').describe('Sort direction'),
+});
+
+export const SearchByFilePathSchema = z.object({
+  filePath: z.string().describe('File path to search for'),
+  matchType: z.enum(['exact', 'partial', 'regex']).default('partial').describe('How to match the file path: exact match, partial (contains), or regex'),
+  type: z.string().optional().describe('Optional vertex type filter (Function, Model, etc.)'),
+  project: z.string().optional().describe('Optional project to filter results'),
+  limit: z.number().min(1).max(100).default(50).describe('Maximum results'),
+  offset: z.number().min(0).default(0).describe('Pagination offset'),
 });
 
 export const GraphTraversalSchema = z.object({
@@ -207,6 +218,7 @@ export type SearchByName = z.infer<typeof SearchByNameSchema>;
 export type SearchByDomain = z.infer<typeof SearchByDomainSchema>;
 export type SearchByTag = z.infer<typeof SearchByTagSchema>;
 export type SearchByProject = z.infer<typeof SearchByProjectSchema>;
+export type SearchByFilePath = z.infer<typeof SearchByFilePathSchema>;
 export type GraphTraversal = z.infer<typeof GraphTraversalSchema>;
 export type ListVertices = z.infer<typeof ListVerticesSchema>;
 export type GetVertex = z.infer<typeof GetVertexSchema>;
